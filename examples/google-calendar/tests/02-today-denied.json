@@ -1,0 +1,12 @@
+{
+  "name": "today is denied without a grant, and dials nothing",
+  "operation": "calendar.today",
+  "arguments": {},
+  "settings": {
+    "google": "google-james"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

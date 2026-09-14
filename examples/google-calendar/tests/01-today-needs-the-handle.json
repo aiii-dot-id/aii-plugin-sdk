@@ -1,0 +1,9 @@
+{
+  "name": "today without the google handle is refused by name",
+  "operation": "calendar.today",
+  "arguments": {},
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

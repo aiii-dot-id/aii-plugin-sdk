@@ -1,0 +1,71 @@
+{
+  "id": "com.aiii.examples.google-calendar",
+  "version": "0.1.0",
+  "plugin_family": "tool_bridge",
+  "title": "google-calendar",
+  "description": "What is on the calendar: today's events and the next few, read through a connected Google account.",
+  "interface": {
+    "id": "tools.provider",
+    "version": 1
+  },
+  "capability_envelope": [
+    "net.outbound:www.googleapis.com:443"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:www.googleapis.com:443"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:www.googleapis.com:443"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:www.googleapis.com:443"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "google",
+      "type": "secret",
+      "title": "Google account",
+      "description": "the credential handle: an oauth2 profile connected on the Plugins page with the calendar service",
+      "required": true,
+      "oauth": {
+        "provider": "google",
+        "services": [
+          "calendar"
+        ]
+      }
+    },
+    {
+      "key": "calendar_id",
+      "type": "string",
+      "title": "Calendar",
+      "description": "which calendar to read; primary is the account's own",
+      "default": "primary"
+    }
+  ]
+}

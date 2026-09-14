@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "description": "the arrivals a blocking receive returns; [] when nothing came within the budget",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the channel's own stable message id"
+      },
+      "from": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the sender's address as the address book spells it, never a display name"
+      },
+      "body": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "from"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "the adapter names its channel and receives by long poll within a budget",
+  "operation": "describe",
+  "arguments": {},
+  "expect": {
+    "status": "succeeded",
+    "result_contains": ["\"channel\":\"telegram\"", "\"receive\":\"poll\"", "\"budget_seconds\":10"]
+  }
+}

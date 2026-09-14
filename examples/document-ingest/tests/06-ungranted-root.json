@@ -1,0 +1,11 @@
+{
+  "name": "an ungranted root is denied by name",
+  "operation": "document.list",
+  "arguments": {
+    "root": "home"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

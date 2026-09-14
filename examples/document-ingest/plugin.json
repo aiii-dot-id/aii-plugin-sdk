@@ -1,0 +1,68 @@
+{
+  "id": "com.aiii.examples.document-ingest",
+  "version": "0.1.0",
+  "plugin_family": "tool_bridge",
+  "title": "document-ingest",
+  "description": "A document plugin built with the kit: ingest a text file from a granted folder into RING4, then recall from it.",
+  "interface": {
+    "id": "document.ingest",
+    "version": 1
+  },
+  "capability_envelope": [
+    "ring4.kv",
+    "fs.roots",
+    "fs.private"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "ring4.kv",
+        "fs.roots",
+        "fs.private"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "ring4.kv",
+        "fs.roots",
+        "fs.private"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "ring4.kv",
+        "fs.roots",
+        "fs.private"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "chunk_chars",
+      "type": "number",
+      "title": "Chunk size",
+      "description": "characters per stored chunk",
+      "default": 400,
+      "minimum": 80,
+      "maximum": 4000
+    }
+  ]
+}

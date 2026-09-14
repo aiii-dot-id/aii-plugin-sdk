@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "published": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "refused": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "published"
+  ],
+  "additionalProperties": false
+}

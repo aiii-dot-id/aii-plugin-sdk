@@ -1,0 +1,9 @@
+{
+  "name": "no server set is an honest failure",
+  "operation": "mcp.refresh",
+  "arguments": {},
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

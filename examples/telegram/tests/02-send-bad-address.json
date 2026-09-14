@@ -1,0 +1,15 @@
+{
+  "name": "an address that is not a chat id or @username is refused before any call",
+  "operation": "send",
+  "arguments": {
+    "address": "Sam",
+    "body": "hello"
+  },
+  "settings": {
+    "bot_token": "tg"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

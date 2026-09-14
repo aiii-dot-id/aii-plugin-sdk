@@ -1,0 +1,11 @@
+{
+  "name": "remember stores the first text as m:1",
+  "operation": "memory.remember",
+  "arguments": {
+    "text": "the ledger is the only identity truth"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"id\":\"m:1\""
+  }
+}

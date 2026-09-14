@@ -1,0 +1,78 @@
+{
+  "id": "com.aiii.examples.logging",
+  "version": "0.1.0",
+  "plugin_family": "tool_bridge",
+  "title": "logging",
+  "description": "A logging plugin built with the kit: the identity's events, delivered, written to a private log.",
+  "interface": {
+    "id": "log.sink",
+    "version": 1
+  },
+  "capability_envelope": [
+    "fs.private"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "fs.private"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "fs.private"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "fs.private"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "keep_lines",
+      "type": "number",
+      "title": "Lines to keep",
+      "description": "how many recent lines log.read returns at most",
+      "default": 200,
+      "minimum": 10,
+      "maximum": 5000
+    }
+  ],
+  "subscriptions": [
+    {
+      "topic": "tool.called",
+      "operation": "log.event"
+    },
+    {
+      "topic": "turn.started",
+      "operation": "log.event"
+    },
+    {
+      "topic": "turn.ended",
+      "operation": "log.event"
+    },
+    {
+      "topic": "alarm.fired",
+      "operation": "log.event"
+    }
+  ]
+}

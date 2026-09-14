@@ -1,0 +1,12 @@
+{
+  "name": "streaming issues is denied without a grant",
+  "operation": "issues.stream",
+  "arguments": {},
+  "settings": {
+    "repo": "golang/go"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

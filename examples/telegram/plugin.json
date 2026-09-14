@@ -1,0 +1,62 @@
+{
+  "id": "com.aiii.examples.telegram",
+  "version": "0.1.0",
+  "plugin_family": "channel_adapter",
+  "title": "telegram",
+  "description": "A Telegram channel adapter built with the kit: receives by long poll, sends through the bot API.",
+  "interface": {
+    "id": "aii.channel",
+    "version": 1
+  },
+  "capability_envelope": [
+    "net.outbound:api.telegram.org:443",
+    "ring4.kv"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.telegram.org:443",
+        "ring4.kv"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.telegram.org:443",
+        "ring4.kv"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.telegram.org:443",
+        "ring4.kv"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "bot_token",
+      "type": "secret",
+      "title": "Bot token",
+      "description": "the credential handle: an auth profile of scheme path pinned to api.telegram.org:443 whose secret is the bot token from @BotFather",
+      "required": true
+    }
+  ]
+}

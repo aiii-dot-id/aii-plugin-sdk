@@ -1,0 +1,84 @@
+{
+  "id": "com.aiii.examples.twilio-sms",
+  "version": "0.1.0",
+  "plugin_family": "channel_adapter",
+  "title": "twilio-sms",
+  "description": "An SMS channel adapter built with the kit: sends through Twilio, receives by webhook.",
+  "interface": {
+    "id": "aii.channel",
+    "version": 1
+  },
+  "capability_envelope": [
+    "net.outbound:api.twilio.com:443"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.twilio.com:443"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.twilio.com:443"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.twilio.com:443"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "account_sid",
+      "type": "string",
+      "title": "Account SID",
+      "description": "the Twilio account this adapter sends from",
+      "required": true
+    },
+    {
+      "key": "from_number",
+      "type": "string",
+      "title": "From number",
+      "description": "the Twilio number messages come from, E.164",
+      "required": true
+    },
+    {
+      "key": "auth_token",
+      "type": "secret",
+      "title": "Auth token",
+      "description": "the credential handle: a basic-scheme auth profile whose secret is AccountSid:AuthToken",
+      "required": true
+    }
+  ],
+  "webhooks": [
+    {
+      "path": "sms",
+      "operation": "sms.inbound",
+      "signature": {
+        "scheme": "twilio",
+        "header": "X-Twilio-Signature",
+        "secret_setting": "auth_token"
+      },
+      "max_body_bytes": 65536
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "method": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "headers": {
+      "type": "object"
+    },
+    "body": {
+      "type": "string",
+      "maxLength": 65536
+    }
+  },
+  "required": [
+    "method",
+    "body"
+  ],
+  "additionalProperties": false
+}

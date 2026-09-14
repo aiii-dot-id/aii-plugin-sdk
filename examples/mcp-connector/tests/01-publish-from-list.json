@@ -1,0 +1,31 @@
+{
+  "name": "a server's tool list is published",
+  "operation": "mcp.publish_from",
+  "arguments": {
+    "tools": [
+      {
+        "name": "list_files",
+        "description": "List files",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      {
+        "name": "read_file",
+        "description": "Read a file"
+      }
+    ]
+  },
+  "settings": {
+    "server_url": "https://mcp.example.test/rpc"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"name\":\"mcp.list_files\""
+  }
+}

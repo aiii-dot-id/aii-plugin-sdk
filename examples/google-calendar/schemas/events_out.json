@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "http_status": {
+      "type": "integer"
+    },
+    "events": {
+      "description": "the calendar's own answer: items with id, summary, start, end, location, status"
+    },
+    "effect": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "http_status"
+  ],
+  "additionalProperties": false
+}

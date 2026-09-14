@@ -1,0 +1,11 @@
+{
+  "name": "recall scans one text after the forget",
+  "operation": "memory.recall",
+  "arguments": {
+    "query": "sweep"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"scanned\":1"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "a missing file is an honest failure",
+  "operation": "document.ingest",
+  "arguments": {
+    "root": "docs",
+    "path": "absent.md"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "FS_NOT_FOUND"
+  }
+}

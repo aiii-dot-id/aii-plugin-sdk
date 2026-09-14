@@ -1,0 +1,12 @@
+{
+  "name": "recall finds the chunk about the ledger",
+  "operation": "document.recall",
+  "arguments": {
+    "query": "what is the identity truth",
+    "k": 1
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "the only identity truth"
+  }
+}

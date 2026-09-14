@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "receipt": {
+      "type": "string"
+    },
+    "http_status": {
+      "type": "integer"
+    },
+    "effect": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "receipt"
+  ],
+  "additionalProperties": false
+}

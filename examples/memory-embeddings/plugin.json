@@ -1,0 +1,64 @@
+{
+  "id": "com.aiii.examples.memory-embeddings",
+  "version": "0.1.0",
+  "plugin_family": "tool_bridge",
+  "title": "memory-embeddings",
+  "description": "A working memory for an identity, built with the kit.",
+  "interface": {
+    "id": "memory.embeddings",
+    "version": 1
+  },
+  "capability_envelope": [
+    "ring4.kv",
+    "model.embeddings"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "ring4.kv",
+        "model.embeddings"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "ring4.kv",
+        "model.embeddings"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "ring4.kv",
+        "model.embeddings"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "recall_limit",
+      "type": "number",
+      "title": "Recall limit",
+      "description": "How many texts a recall returns when the caller names no k",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 20
+    }
+  ]
+}

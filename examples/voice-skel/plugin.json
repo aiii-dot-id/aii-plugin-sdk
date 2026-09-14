@@ -1,0 +1,44 @@
+{
+  "id": "com.example.voice-skel",
+  "version": "0.1.0",
+  "plugin_family": "voice_interface",
+  "title": "voice-skel",
+  "description": "The shape of a resident speech engine: the session lane, the seven controls, events with identity; no models, no audio.",
+  "interface": {
+    "id": "speech.session",
+    "version": 1
+  },
+  "capability_envelope": [],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-native",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "native_t3_component",
+      "admission_profile": "platform_reserved",
+      "variant_capabilities": [],
+      "artifact": "dist/voice-skel-linux-x86_64"
+    },
+    {
+      "variant_id": "macos-arm64-native",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "native_t3_component",
+      "admission_profile": "platform_reserved",
+      "variant_capabilities": [],
+      "artifact": "dist/voice-skel-macos-arm64"
+    },
+    {
+      "variant_id": "windows-x86_64-native",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "native_t3_component",
+      "admission_profile": "platform_reserved",
+      "variant_capabilities": [],
+      "artifact": "dist/voice-skel-windows-x86_64.exe"
+    }
+  ]
+}
