@@ -72,4 +72,4 @@ The kit produces T0 and T1 packages. T2 and T3 are the platform's acts.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
