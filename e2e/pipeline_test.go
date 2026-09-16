@@ -18,11 +18,8 @@ package e2e
 // .
 // .
 // .
-// .
 
 import (
-	"bytes"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,29 +78,6 @@ func buildVerifyOracle(t *testing.T) string {
 	oracle := filepath.Join(tools, "aii")
 
 	args := []string{"build", "-buildvcs=false", "-o", oracle, "./cmd/aii"}
-	trustPath := filepath.Join(sibling, "internal", "packagefmt", "trust.go")
-	trustSrc, err := os.ReadFile(trustPath)
-	if err != nil {
-		t.Fatalf("read sibling trust.go: %v", err)
-	}
-	const broken = "ValidatePublicKeyEnvelope(&env); err"
-	const fixed = "ValidatePublicKeyEnvelope(&env, crypto.ProfileRoot); err"
-	if bytes.Contains(trustSrc, []byte(broken)) {
-		t.Logf("sibling still carries the LoadPinnedRoot empty-profile bug (trust.go:102); building the oracle with the one-token overlay fix")
-		patched := filepath.Join(t.TempDir(), "trust_fixed.go")
-		if err := os.WriteFile(patched, bytes.Replace(trustSrc, []byte(broken), []byte(fixed), 1), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		overlay := filepath.Join(t.TempDir(), "overlay.json")
-		overlayJSON, err := json.Marshal(map[string]map[string]string{"Replace": {trustPath: patched}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(overlay, overlayJSON, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		args = []string{"build", "-buildvcs=false", "-overlay", overlay, "-o", oracle, "./cmd/aii"}
-	}
 	cmd := exec.Command(goBin, args...)
 	cmd.Dir = sibling
 	cmd.Env = append(os.Environ(),

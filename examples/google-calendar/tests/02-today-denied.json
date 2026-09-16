@@ -3,7 +3,7 @@
   "operation": "calendar.today",
   "arguments": {},
   "settings": {
-    "google": "google-james"
+    "google": "google-work"
   },
   "expect": {
     "status": "denied",

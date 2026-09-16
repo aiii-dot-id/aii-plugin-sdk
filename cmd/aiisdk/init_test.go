@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
@@ -106,5 +107,46 @@ func TestGoModReplaceQuotesAPathThatNeedsIt(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(out)); got != kit {
 		t.Fatalf("go resolved the replacement to %q, want %q", got, kit)
+	}
+}
+
+// .
+// .
+func TestAFetchedCommitIsAsRequirableAsARelease(t *testing.T) {
+	const pseudo = "v0.0.0-20260914011552-801c1083a473"
+	main := func(version, sum string) *debug.BuildInfo {
+		return &debug.BuildInfo{Path: sdkModulePath + "/cmd/aiisdk", Main: debug.Module{Path: sdkModulePath, Version: version, Sum: sum}}
+	}
+	for _, c := range []struct {
+		name string
+		bi   *debug.BuildInfo
+		want string
+	}{
+		{"a release", main("v0.1.0", "h1:x"), "v0.1.0"},
+		{"go install @latest on an untagged origin", main(pseudo, "h1:x"), pseudo},
+		{"a checkout build stamped from the commit", main(pseudo, ""), ""},
+		{"a dirty checkout build", main(pseudo+"+dirty", ""), ""},
+		{"a devel build", main("(devel)", ""), ""},
+		{"a binary whose main module is not the kit", &debug.BuildInfo{Path: sdkModulePath + "/cmd/aiisdk",
+			Main: debug.Module{Path: "com.example.other", Version: "v1.0.0", Sum: "h1:x"}}, ""},
+	} {
+		if got := fetchableVersion(c.bi); got != c.want {
+			t.Errorf("%s: fetchable version %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// .
+// .
+// .
+// .
+func TestARefusedInitLeavesNoDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("AII_SDK_DIR", "")
+	if rc := cmdInit([]string{"com.example.nothing"}); rc == 0 {
+		t.Fatal("init scaffolded with no checkout and no fetched version to require")
+	}
+	if _, err := os.Stat("com.example.nothing"); err == nil {
+		t.Fatal("a refused init left its directory behind")
 	}
 }

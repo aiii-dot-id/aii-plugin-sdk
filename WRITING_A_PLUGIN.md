@@ -10,10 +10,14 @@ is real and copy-pasteable; the sequence is exactly what
 - **Go 1.25 or newer.**
 - **TinyGo 0.42 or newer** (https://tinygo.org) to compile the guest
   wasm. TinyGo drives the Go on its PATH and accepts 1.25 through 1.27.
-- For the *verify* and *run* steps, the host's two binaries on your PATH
-  (or in a directory named by `AII_OS_BIN`):
-  - `aii` — its `aii plugin verify` is the offline package verifier.
-  - `aii-plugin-worker` — runs one wasm module behind the sandbox.
+- For the *verify* and *run* steps, the host's `aii` in a directory
+  named by `AII_OS_BIN` — from an AII OS release
+  (https://github.com/aiii-dot-id/aii-os/releases) or built from its
+  source:
+  - `aii plugin verify` is the offline package verifier;
+  - `aii plugin-worker` runs one wasm module behind the sandbox (a host
+    checkout also builds it standalone, `aii-plugin-worker`, which the
+    kit finds on PATH).
 
   The kit never imports them, it only executes them. You can author,
   build, and package a plugin with neither present; you need them to
@@ -27,7 +31,8 @@ go install github.com/aiii-dot-id/aii-plugin-sdk/cmd/aiisdk@latest
 
 Or clone the kit and build it: `go build -o bin/aiisdk ./cmd/aiisdk`.
 `aiisdk` is the whole authoring surface: `init`, `build`, `package`,
-`test`, `devcert`, `sign`, `revoke`, `publish`. `aiisdk help` is the map.
+`test`, `devcert`, `sign`, `revoke`, `publish`, `runtime-pack`. `aiisdk
+help` is the map.
 
 ## 2. Scaffold a plugin
 
@@ -108,8 +113,8 @@ And one rule the library CANNOT enforce for you:
   hypothetical: a resident speech engine shipped an enrollment family whose
   parser was strict, and a live identity got the identical "unknown
   argument" error seven times running — on a read operation that takes no
-  arguments at all — before anyone could see why (2026-09-13). Read these
-  keys with `sdk.HostNow(c)` and `sdk.OperatorAct(...)`, and let anything
+  arguments at all — before anyone could see why. Read these keys with
+  `c.HostNowMillis()` and `sdk.OperatorAct(...)`, and let anything
   else beginning with `_host` pass without complaint.
 
 `main()` stays a one-liner. Your `Describe` calls are the one source of
@@ -119,9 +124,11 @@ which `aiisdk package` reads through a worker oracle when it finds one
 (`AII_OS_BIN`, or `aii-plugin-worker` on PATH), and `sdk.MainDescribe()`
 prints the same bytes when running your package under a scrubbed
 environment is the fallback. That emission *is* the interface schema
-file the package ships, and the host asks the artifact for its own
-account at activation and refuses a package whose file says something
-else. Declare each operation once, in Go; nothing duplicates it.
+file the package ships, and for a WASM artifact declaring one core
+interface the host asks the artifact for its own account at activation
+and refuses a package whose file says something else (a native variant,
+or a package with two core interfaces, is taken as declared). Declare
+each operation once, in Go; nothing duplicates it.
 
 `Descriptor` also takes `Input` and `Output` (paths of the operation's
 JSON Schema files, kept to the closed subset in
@@ -242,13 +249,14 @@ report always names the host boundary and never crosses it —
 { "name": "host-receipt",          "status": "not_run",    "class": "host",
   "next": "obtain the receipt from the host after activation — only host-produced data is deployment evidence" },
 { "name": "manifest_hash-consumer","status": "incomplete", "class": "host",
-  "next": "run 'devsign -payload-out' on the staged manifest.json, read manifest_hash back, and compare — fail closed on mismatch" }
+  "next": "run 'aii-devsign -payload-out' on the staged manifest.json, read manifest_hash back, and compare — fail closed on mismatch" }
 ```
 
 — and no local observation can ever fill a `host` row. `manifest_hash-consumer`
 is `incomplete` on purpose: the SDK reports the `manifest_hash` its own
-canonicalizer computes (source: §3.5), but the signing consumer
-(`devsign`) may canonicalize differently. Until you derive the pair
+canonicalizer computes (`aiiospkg.ManifestHash`), but the signing consumer
+(`aii-devsign`, built from the host's source) may canonicalize
+differently. Until you derive the pair
 through the consumer's own payload path and compare, that agreement is
 unproven — reported, not assumed.
 
@@ -265,7 +273,7 @@ The real certifier is an AIII authority; for local work you mint your own
 **dev** chain, and the package proves T1 to anyone who pins your dev root.
 
 ```sh
-aiisdk devcert   # once per machine — mints .keys/ (dual-PQ; SLH-DSA keygen is slow)
+aiisdk devcert   # once per plugin directory — mints .keys/ (dual-PQ; SLH-DSA keygen is slow); reuse it with sign -keys
 aiisdk sign      # stamps the exact-release signature and repacks to T1
 ```
 
@@ -321,7 +329,7 @@ ledgered fact on the host) refuses any older snapshot as a rollback.
 The signing keys are post-quantum (ML-DSA-87 + SLH-DSA-SHA2-256s, profile
 `AIII-PQ-SIGNATURE-V1-ROOT`), produced by the kit's one sanctioned
 dependency (`cloudflare/circl`) and verified byte-for-byte by the
-runtime's own verifiers — see the README's dependency note. Key material
+runtime's own verifiers — `go.mod` says why it is the one dependency. Key material
 lives only under `.keys/` (0600, gitignored); the kit never prints it.
 
 ## 8. The other lane: native T3
@@ -333,14 +341,20 @@ A **native T3** plugin is a PROCESS, not a module. The host execs it and
 speaks the same framed BBB over stdio. That lane exists for code that
 must be native — CGO, SIMD, a runtime wasm cannot host. Be precise about
 what it does NOT unlock: under the shipped containment the Linux sandbox
-(`bwrap --unshare-all`) presents no GPU, NPU, or sound devices and a
-read-only filesystem beyond the activation directory, so "native" buys
-CPU-only compute over bundled files — model weights run on CPU
-inference, not on the accelerator. (macOS Seatbelt currently denies only
-network and file-write, so Metal is reachable there — a five-platform
-asymmetry to plan around, not a promise.) Audio is not a plugin concern
-at all: voice reaches the identity through configured speech endpoints
-and the dashboard socket, not through a plugin data plane.
+(`bwrap --unshare-all`) presents a read-only filesystem, the activation
+directory included, no network, and no sound or input devices. Its
+device view follows the accelerator profile: a variant whose profile
+names the `vulkan` backend sees the GPU's compute nodes inside the wall
+— the render nodes and, where present, the NVIDIA device pair, verified
+and named in the activation's containment line — while any other
+backend, and a native plugin with no profile, computes on CPU over
+bundled files there; no NPU is admitted on Linux. (macOS Seatbelt denies network,
+file-write and the OS credential stores, so Metal is reachable; the
+Windows AppContainer admits the GPU too — its qualification ran a Vulkan
+backend inside the wall — a five-platform asymmetry to plan around, not
+a promise.) Audio is not on the control lane: a resident speech engine
+(§17) receives the session's frames on two descriptors the host hands
+it at spawn; every other plugin has no audio at all.
 
 The handlers do not change. Only the last line does:
 
@@ -363,30 +377,43 @@ GOOS=darwin GOARCH=arm64 go build -o native-skel ./examples/native-skel/
 Three things are different about the lane, and all three are the host's
 doing rather than yours:
 
-**One signed package per platform.** A variant declares its platform,
-and the artifact travels inside the package — so a heterogeneous plugin
-ships as several packages, and the operator installs the one for their
-machine. Two packages with the same plugin id are refused, first
-directory wins, so only the right one may be present.
+**One signed package can carry several platforms.** Each variant declares
+its platform/architecture and carries its own small executable in the same
+`.aiiospkg`. One plugin id, version, settings declaration and signature cover
+that archive; the host selects its own variant. Do not install three copies
+of the same plugin id. For a large engine, declare one companion runtime per
+variant in `runtimes`, and give each variant an accelerator profile naming
+its model subset. The host downloads only the selected runtime and models;
+the common package includes the small carriers for all declared platforms.
+Without a model subset, the host acquires every globally declared model.
 
-**The child is contained — on Linux today, and not yet everywhere.**
-Where a mechanism is wired, containment is real: no network of its own,
-read-only filesystem, dies with its supervisor.
+For a desktop voice engine, use variants `macos/arm64`, `linux/x86_64` and
+`windows/x86_64`, each with `execution_runtime: native_t3_component`, its own
+`artifact`, a matching `runtimes[].variant_id`, and `accelerator.models` names
+from the global `models` list. Exact shared model bytes can appear in more
+than one subset. Different model bytes need different destination paths.
+Platform selection does not waive containment or OS/CPU compatibility gates.
+
+**The child is contained on every desktop.** The mechanism differs by
+platform; the property does not: no network of its own, nothing
+writable beyond what the host hands it, and it dies with its supervisor.
 
 | | native T3 containment |
 |---|---|
 | Linux | bubblewrap: read-only root, no writable path, `--unshare-net` |
 | macOS | Seatbelt via `sandbox-exec`: no network, read-only filesystem |
-| Windows | a job object: dies with the supervisor, no breakaway, UI-restricted — **no network wall yet**: a native child can still open a socket there |
+| Windows | an AppContainer with no capabilities — no network — inside a job object: dies with the supervisor, no breakaway, UI-restricted; it reads what the host grants it and writes only its own container folder |
 | Android / iOS | unreachable: mobile T3 is in-process bundled, and iOS forbids exec |
 
-**Write your plugin as though the wall is there**: it is where it
-exists, and it is being wired where it is not. But do not rely on it to
-contain a bug: on macOS and Windows today, a native T3 child can open its
-own socket and read what its user can read.
+**Write your plugin as though the wall is there**: on the three desktops
+it is. But do not rely on it to contain a bug: a wall bounds what a child
+can reach, not what it does with what it reaches — and on macOS the
+child can still read most of what its user can read (only the OS
+credential stores are denied), so what you load, cache and log is still
+yours to handle correctly.
 
-**Devices on the operator's own network** are a class of their own
-(R108, 2026-09-12): a plugin declares `net.local` bare in its envelope —
+**Devices on the operator's own network** are a class of their own: a
+plugin declares `net.local` bare in its envelope —
 it cannot know the operator's devices at packaging time — and the
 operator names them in `plugins.grants.<id>.local`: an address, a range
 like `192.168.1.0/24`, or a name, each with `:port` or `:*` for any.
@@ -406,10 +433,14 @@ That is the contract whether or not the platform is enforcing it, and it
 is the reason a plugin written honestly stays correct when the wall
 arrives. Signing proves provenance, not correctness.
 
-**The readiness mark is a promise.** `Serve` writes it to stderr before
-reading the first frame, and the supervisor sends no work until it
-appears. A plugin that loads models should call `Serve` AFTER they are
-loaded — the mark means ready, not started.
+**Readiness is a report, not a mark.** The host waits for a readiness
+line only when the variant declares an accelerator profile, and then
+only for the `event=ready` line that `ServeReady` prints — models
+loaded, the accelerator, one bounded inference — before it sends work;
+a plain `Serve(mark)` writes its mark to stderr, where it is logged, not
+waited for, and work can arrive as soon as the process exists. Either
+way, call `Serve` or `ServeReady` AFTER the models are loaded: ready
+means ready, not started.
 
 Hostcalls work inside a handler exactly as they do in wasm, including
 while the host is waiting for that handler. The SDK reads the reply
@@ -446,7 +477,7 @@ aiisdk build && aiisdk test -grant kv -grant embeddings
 ```
 
 A third way needs no index of your own. The host keeps memory
-instruments of its own (aii-os R101): `sdk.Memory.Remember(text)` records
+instruments of its own: `sdk.Memory.Remember(text)` records
 a text into your plugin's own record and answers what the record decided
 it was — `created`, `reinforced` (a memory this similar was already held)
 or `updated` (a near-duplicate, or the memory you named with
@@ -539,11 +570,14 @@ run by name, as the host would refuse it at the view.
 **An act the operator must confirm.** An operation that changes
 something on the operator's behalf — enrolling a speaker, removing one,
 resetting a store — declares `OperatorConfirms: true` in its descriptor.
-The host then never dispatches it from a tool call: the identity's call
-PROPOSES it, the plugins page shows the operator the exact arguments
+The host then never dispatches it from a tool call on the identity's
+word alone: the identity's call PROPOSES it, the plugins page shows the
+operator the exact arguments
 (and, for arguments that name a session's transcript finals, the text
 that was heard), and the operation runs once, with exactly those
-arguments, when the operator confirms. Your handler reads the host's
+arguments, when the operator confirms — or at once, under a standing
+"Always" the operator gave ahead of time, stamped as that act. Your
+handler reads the host's
 stamp — `sdk.OperatorAct(args)` gives the act's id and time — and
 refuses a call without one, because the host never makes one. A
 denial, a second confirm of the same act and changed arguments never
@@ -684,7 +718,7 @@ the harness does not.
 **Subscriptions.** Declare in `plugin.json` which of the identity's
 events you want delivered — `tool.called`, `turn.started`, `turn.ended`,
 `ledger.appended`, `alarm.fired`, and the work boundaries `work.started`,
-`work.delivered`, `work.harvested` and `subagent.spawned` — and the
+`work.delivered`, `work.harvested`, `work.graded` and `subagent.spawned` — and the
 operation to invoke, with an optional exact-match filter. Every payload
 is identifiers and classes: `tool.called` carries the tool's name, its
 outcome and duration, the `actor` (`main`, `safe` or `subagent`) and the
@@ -755,13 +789,13 @@ offline refuses the activation naming what is missing. Your process
 finds them through `AII_MODELS_DIR`; it never fetches its own, and
 nothing fetched is executed.
 
-**The runtime**, when your engine is more than one executable (host
-R104 §3, 2026-09-10): pack its interpreter, libraries and code — never
-model data — with `aiisdk runtime-pack -dir <tree> -o cp1-runtime.tar.gz`,
+**The runtime**, when your engine is more than one executable: pack its
+interpreter, libraries and code — never model data — with
+`aiisdk runtime-pack -dir <tree> -o engine-runtime.tar.gz`,
 publish the archive, and declare it per native variant:
 
 ```json
-"runtimes": [{"variant_id": "windows-x86_64-native", "url": "https://…/cp1-runtime.tar.gz",
+"runtimes": [{"variant_id": "windows-x86_64-native", "url": "https://…/engine-runtime.tar.gz",
   "sha256": "<the archive's, as runtime-pack prints it>", "size": 300000000,
   "installed_bytes": 900000000, "files": 15000,
   "inventory_sha256": "<the inventory member's, as runtime-pack prints it>"}]
@@ -810,8 +844,9 @@ p.ServeReady("child-ready", sdk.ReadyReport{ModelsLoaded: 4, Accelerator: "mlx",
 ```
 
 The host refuses a child that spawned without the three fields. On
-Windows, native T3 is refused until the app-container wall is qualified
-with a real backend; a signature never stands in for the wall.
+Windows the child runs inside the app-container wall, qualified against
+a real speech backend before any native T3 was admitted there; a
+signature never stands in for the wall.
 `examples/native-skel` carries a `plugin.json` with one native
 variant per desktop platform and a `build.sh` that cross-compiles all
 three; the acceptance packages the matrix and proves the host refuses
@@ -822,10 +857,15 @@ only door for native code, and the kit mints none.
 
 `aiisdk publish -url <where-you-host-the-package>` prints one catalog
 entry for your plugin: its id, version, an intended tier hint (`-tier`),
-a summary (`plugin.json`'s title or description, or `-summary`), and its
+a summary (the packaged title or description, or `-summary`), and its
 package. A WASM plugin publishes ONE portable package (`"platform": "*"`)
-that runs on every host; a native plugin publishes one package per
-platform its variants cover, all pointing at the same archive. The kit
+that runs on every host; a native plugin publishes one catalog row per
+platform/architecture its variants cover. Every row can point at the SAME
+archive URL, SHA-256 and size. Identity, version and coverage are read from
+the packaged manifest; a disagreeing `plugin.json` is refused, including
+when `-pkg` explicitly selects an older archive. This metadata check is not
+signature verification: `-tier T3` is an intended tier hint, not a signature
+or proof of admission. The kit
 does not host your package and does not sign the catalog: you host the
 `.aiiospkg` at the URL you gave, paste the entry into `aiios-plugins.md`
 in the platform's `plugin-catalog` repository, and it is signed there
@@ -836,7 +876,10 @@ with the platform's release key.
 A voice engine is not a series of tool calls: it is a resident session
 the host must be able to interrupt while it speaks. `p.ServeSession(admit)`
 runs that lane — full-duplex JSON-RPC over the same stdio — in place of
-`p.Serve`. Your `admit` is handed one `*Control` at a time — the eight
+`p.Serve`, for a package whose `plugin.json` declares `"plugin_family":
+"voice_interface"`: that declaration is what binds the session lane and
+the audio pair at activation; any other family gets neither. Your
+`admit` is handed one `*Control` at a time — the eight
 controls (`speech.session.open`, `.synthesize`, `.cancel_synthesis`,
 `.stop_playback`, `.finish_input`, `.close`, `.status`, `.playback_report`)
 in the order the host sent them — and answers it with `c.Answer(result, err)`.
@@ -871,8 +914,9 @@ The contract, in five rules:
   alone), so the host can fence exactly the stream it stopped. The open
   names the host's endpoint formats — `audio.input` and `audio.output`,
   each `{rate, channels}`, s16le — and the engine ANSWERS with the
-  formats it speaks (`audio.input`/`audio.output` in the admission;
-  absent, the host's stand): the conversion between the endpoints and
+  formats it speaks (`audio.input`/`audio.output` in the admission —
+  both, or the open is refused: the host never pumps at a guessed
+  rate): the conversion between the endpoints and
   the engine is the host's, at its endpoints, along the sample clock —
   a boundary named in the host's clock reaches the engine as its next
   whole sample. An engine that cannot speak a format refuses the open
@@ -976,9 +1020,10 @@ whole family.
 
 Mark an operation that changes something on the operator's behalf with
 `OperatorConfirms: true` in its descriptor — the host then never
-dispatches it from a tool call; it records the exact arguments, asks the
-operator, and runs it once with those arguments when they confirm. A
-read takes no confirmation.
+dispatches it from a tool call on the identity's word alone; it records
+the exact arguments, asks the operator, and runs it once with those
+arguments when they confirm — or at once, under a standing "Always" the
+operator gave ahead of time. A read takes no confirmation.
 
 ## 17a. Credentials: handles, and OAuth
 

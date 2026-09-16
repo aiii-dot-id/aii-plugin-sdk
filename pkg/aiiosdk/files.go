@@ -207,7 +207,7 @@ func (FilesClient) Digest(root, path string) (sha256Hex string, size int64, exis
 	res, err := InvokeCall("fs.read", target(root, path), map[string]any{"length": 1, "digest": true})
 	if err != nil {
 		var oe *OperationError
-		if errors.As(err, &oe) && oe.Reason == "FS_NOT_FOUND" {
+		if errors.As(err, &oe) && oe.ReasonCode == "FS_NOT_FOUND" {
 			return "", 0, false, nil
 		}
 		return "", 0, false, err

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 )
 
 // .
@@ -182,6 +183,20 @@ func (v *AuthorVariant) isT3() bool {
 func (c *AuthorConfig) Root() string { return c.ID + "-" + c.Version }
 
 // .
+// .
+// .
+// .
+func validVersion(version string) error {
+	if strings.ContainsAny(version, `/\`) {
+		return fmt.Errorf("version %q must be one path component: it names the staged directory and the bundle root", version)
+	}
+	if err := validateComponent(version); err != nil {
+		return fmt.Errorf("version %q is not a package path component: %w", version, err)
+	}
+	return nil
+}
+
+// .
 func ValidPluginID(id string) bool { return reManifestID.MatchString(id) }
 
 // .
@@ -222,6 +237,9 @@ func (c *AuthorConfig) Validate() error {
 	}
 	if c.Version == "" {
 		return fmt.Errorf("version is required")
+	}
+	if err := validVersion(c.Version); err != nil {
+		return err
 	}
 	if !enumHas(c.PluginFamily, "channel_adapter", "provider_bridge", "tool_bridge", "voice_interface") {
 		return fmt.Errorf("plugin_family %q must be one of channel_adapter, provider_bridge, tool_bridge, voice_interface", c.PluginFamily)
@@ -290,7 +308,7 @@ func (c *AuthorConfig) Validate() error {
 		}
 	}
 	if needsBaseline && !hasWASM {
-		return fmt.Errorf("no WASM variant declared — the tier contract requires a WASM baseline for T0/T1/T2 (PLUGIN_BUNDLE_FORMAT.md §1); a package whose variants are all platform_reserved or mobile in-process is exempt")
+		return fmt.Errorf("no WASM variant declared — a T0, T1 or T2 package needs a WASM baseline; a package whose variants are all platform_reserved or mobile in-process is exempt")
 	}
 	if c.DefaultVariant != "" && !seen[c.DefaultVariant] {
 		return fmt.Errorf("default_variant %q is not a declared variant", c.DefaultVariant)

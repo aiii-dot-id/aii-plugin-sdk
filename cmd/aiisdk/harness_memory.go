@@ -175,7 +175,7 @@ func (h *harness) answerRecall(arguments json.RawMessage) (json.RawMessage, json
 	if query == "" || a.Limit < 0 || a.Limit > 50 {
 		return failed("OPERATION_ARGUMENT_INVALID", nil), nil
 	}
-	if a.Decay != "" && a.Decay != "carrd" && a.Decay != "none" {
+	if a.Decay != "" && a.Decay != "carrd" && a.Decay != "actr" && a.Decay != "none" {
 		return failed("OPERATION_ARGUMENT_INVALID", nil), nil
 	}
 	var since, before time.Time

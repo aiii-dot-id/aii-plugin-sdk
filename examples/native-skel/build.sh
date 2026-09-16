@@ -1,6 +1,6 @@
 #!/bin/sh
-# Build the native skeleton for the three desktop platforms — one
-# signed package per platform is the lane's rule; this builds the
+# Build the native skeleton for the three desktop platforms — the three
+# builds ride in ONE signed package, one variant each; this builds the
 # artifacts the package declares.
 set -eu
 cd "$(dirname "$0")"

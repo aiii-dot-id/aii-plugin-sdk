@@ -171,11 +171,11 @@ func stagedSigningInputs(dir string, cfg *aiiospkg.AuthorConfig) (packageHash, m
 // .
 func appendBoundaryChecks(rep *report, packageHash, manifestHash string) {
 	if packageHash != "" && manifestHash != "" {
-		rep.verified("signing-inputs", fmt.Sprintf("package_hash=%s manifest_hash=%s (manifest_hash source: SDK \u00a73.5 canonicalizer)", packageHash, manifestHash))
+		rep.verified("signing-inputs", fmt.Sprintf("package_hash=%s manifest_hash=%s (manifest_hash source: the kit's canonicalizer, aiiospkg.ManifestHash)", packageHash, manifestHash))
 	}
 	rep.incomplete("manifest_hash-consumer",
-		"the signing consumer (devsign) may canonicalize manifest_hash differently and was not consulted (devsign not on PATH)",
-		"run 'devsign -payload-out' on the staged manifest.json, read manifest_hash back, and compare \u2014 fail closed on mismatch")
+		"the signing consumer (aii-devsign, built from the host's source) may canonicalize manifest_hash differently and was not consulted",
+		"run 'aii-devsign -payload-out' on the staged manifest.json, read manifest_hash back, and compare \u2014 fail closed on mismatch")
 	rep.notRun("signature",
 		"this command proves the plugin locally and does not sign it",
 		"run 'aiisdk sign' to mint the T1-under-dev-root signature \u2014 still local evidence, never a host receipt")
@@ -308,19 +308,12 @@ Case file shape:
 
 	// .
 	account, aerr := runOracleDescribe(oracle, module)
-	staged, _ := filepath.Glob(filepath.Join(dir, "dist", "pkg", cfg.ID+"-"+cfg.Version, "install-root", "interfaces", "*.schema.json"))
-	switch {
-	case aerr != nil:
+	if aerr != nil {
 		rep.fail("account", "the module answers no account: "+aerr.Error())
-	case len(staged) != 1:
-		rep.fail("account", fmt.Sprintf("expected one packaged descriptor file, found %d", len(staged)))
-	default:
-		packaged, _ := os.ReadFile(staged[0])
-		if string(packaged) != string(account) {
-			rep.fail("account", "the module's aiii-plugin-describe and the packaged descriptor differ")
-		} else {
-			rep.verified("account", "the module's aiii-plugin-describe equals the packaged descriptor")
-		}
+	} else if err := accountMatchesStaged(dir, cfg, account); err != nil {
+		rep.fail("account", err.Error())
+	} else {
+		rep.verified("account", "the module's aiii-plugin-describe equals the packaged descriptors, one file per interface")
 	}
 
 	// .
@@ -592,4 +585,38 @@ func withOperatorAct(args json.RawMessage, on bool, caseName string) json.RawMes
 		return args
 	}
 	return out
+}
+
+// .
+// .
+// .
+// .
+// .
+func accountMatchesStaged(dir string, cfg *aiiospkg.AuthorConfig, account []byte) error {
+	methods, err := aiiospkg.DescriptorIDs(account)
+	if err != nil {
+		return fmt.Errorf("the module's account is not a descriptor list: %v", err)
+	}
+	ifaces := cfg.InterfaceList()
+	byIface, err := aiiospkg.PartitionMethods(ifaces, methods)
+	if err != nil {
+		return fmt.Errorf("interfaces: %v", err)
+	}
+	for _, iface := range ifaces {
+		want := account
+		if len(ifaces) > 1 {
+			if want, err = aiiospkg.DescriptorsSubset(account, byIface[iface.ID]); err != nil {
+				return fmt.Errorf("interface %s: %v", iface.ID, err)
+			}
+		}
+		staged := filepath.Join(stageDir(dir, cfg), "install-root", filepath.FromSlash(aiiospkg.SchemaFileRel(iface)))
+		packaged, rerr := os.ReadFile(staged)
+		if rerr != nil {
+			return fmt.Errorf("interface %s: no packaged descriptor file (%v)", iface.ID, rerr)
+		}
+		if string(packaged) != string(want) {
+			return fmt.Errorf("interface %s: the module's aiii-plugin-describe and the packaged descriptor differ", iface.ID)
+		}
+	}
+	return nil
 }

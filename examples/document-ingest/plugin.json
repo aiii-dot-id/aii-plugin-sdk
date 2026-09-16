@@ -57,7 +57,7 @@
   "settings": [
     {
       "key": "chunk_chars",
-      "type": "number",
+      "type": "integer",
       "title": "Chunk size",
       "description": "characters per stored chunk",
       "default": 400,

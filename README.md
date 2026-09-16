@@ -12,9 +12,11 @@ and granted by the operator, never assumed.
 
 - Go 1.25 or newer.
 - [TinyGo](https://tinygo.org) 0.42 or newer, to compile the WASM module.
-- To verify and run a plugin locally, the host's `aii` and
-  `aii-plugin-worker` on your PATH (or in the directory `AII_OS_BIN`
-  names). Writing, building and packaging need neither.
+- To verify and run a plugin locally, the host's `aii` — from an
+  [AII OS release](https://github.com/aiii-dot-id/aii-os/releases) or
+  built from its source — in a directory named by `AII_OS_BIN`; `aii`
+  doubles as the plugin worker there. Writing, building and packaging
+  need no host at all.
 
 ## Quick start
 
@@ -28,7 +30,7 @@ From a checkout instead of a release: `go build -o ~/bin/aiisdk
 ./cmd/aiisdk`, then pass `-sdk <path to the checkout>` to `aiisdk init`
 (or set `AII_SDK_DIR`); the scaffold is wired to it with a `replace`.
 
-Then read [].
+Then read [WRITING_A_PLUGIN.md](WRITING_A_PLUGIN.md).
 
 ## Trust tiers
 
@@ -49,10 +51,11 @@ The kit produces T0 and T1 packages. T2 and T3 are the platform's acts.
 | `aiisdk build` | compile the WASM module |
 | `aiisdk package` | write the canonical `.aiiospkg` (T0) |
 | `aiisdk test` | build, package, verify and run it on the host binaries |
-| `aiisdk devcert` | mint a local dev signing chain, once per machine |
+| `aiisdk devcert` | mint a local dev signing chain into `.keys/`, once per plugin directory (reuse one with `sign -keys`) |
 | `aiisdk sign` | sign the package (T1) |
 | `aiisdk revoke` | revoke a signed release in the dev chain |
 | `aiisdk publish` | print the package's catalog entry |
+| `aiisdk runtime-pack` | pack a native engine's companion runtime for `runtimes` |
 
 `aiisdk <command> -h` documents each.
 
@@ -61,12 +64,13 @@ The kit produces T0 and T1 packages. T2 and T3 are the platform's acts.
 - `pkg/aiiosdk` — the guest library. Start at its package documentation.
 - `pkg/aiiospkg` — the packager and the dev signing chain.
 - `cmd/aiisdk` — the command-line tool.
-- `examples/` — ten plugins, each with a README: the bare guest, two
-  memories, a GitHub connector, a document plugin, an SMS webhook
-  adapter, an event logger, an MCP bridge, and two native skeletons.
+- `examples/` — twelve plugins, each with a README: the bare guest, two
+  memories, a GitHub connector, a Google Calendar connector, a document
+  plugin, an SMS webhook adapter, a Telegram adapter, an event logger, an
+  MCP bridge, and two native skeletons.
 - `vectors/` — conformance vectors shared with the host.
 - `e2e/`, `acceptance/` — proofs against a host checkout, for
- maintainers.
+  maintainers.
 
 `make test` runs the unit suite and needs only Go.
 

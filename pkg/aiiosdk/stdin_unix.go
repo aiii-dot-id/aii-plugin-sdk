@@ -14,6 +14,13 @@ import (
 // .
 // .
 func pollableStdin() *os.File {
+	// .
+	// .
+	// .
+	// .
+	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		return os.Stdin
+	}
 	if err := syscall.SetNonblock(0, true); err != nil {
 		return os.Stdin
 	}

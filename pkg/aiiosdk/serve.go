@@ -55,6 +55,9 @@ type stdioTransport struct {
 // .
 // .
 // .
+// .
+// .
+// .
 func (p *Plugin) Serve(readyMark string) error {
 	if describeAsked() {
 		return p.writeDescriptors(os.Stdout)

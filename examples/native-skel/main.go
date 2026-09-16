@@ -21,6 +21,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/aiii-dot-id/aii-plugin-sdk/pkg/aiiosdk"
 )
@@ -35,7 +36,7 @@ func main() {
 		return map[string]any{
 			"plugin":   "native-skel",
 			"runtime":  "native_t3_component",
-			"platform": fmt.Sprintf("%s/%s", os.Getenv("GOOS"), os.Getenv("GOARCH")),
+			"platform": runtime.GOOS + "/" + runtime.GOARCH,
 		}, nil
 	})
 
@@ -55,6 +56,7 @@ func main() {
 		return map[string]any{"stored": key}, nil
 	})
 
+	// .
 	// .
 	// .
 	// .

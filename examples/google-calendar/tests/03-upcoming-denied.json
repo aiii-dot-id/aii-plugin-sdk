@@ -5,7 +5,7 @@
     "limit": 3
   },
   "settings": {
-    "google": "google-james"
+    "google": "google-work"
   },
   "expect": {
     "status": "denied",

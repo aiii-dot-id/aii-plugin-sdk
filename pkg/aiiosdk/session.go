@@ -700,11 +700,15 @@ func (s *Session) HostCallTo(ctx context.Context, operation string, target any, 
 		s.pendMu.Unlock()
 	}()
 
+	op, merr := marshalValue(operation)
+	if merr != nil {
+		return nil, fmt.Errorf("aiiosdk: operation name cannot be written into a frame: %w", merr)
+	}
 	var frame []byte
 	if targetRaw != nil {
-		frame = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"invoke.call","params":{"operation":%q,"target":%s,"arguments":%s}}`, id, operation, targetRaw, argsRaw))
+		frame = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"invoke.call","params":{"operation":%s,"target":%s,"arguments":%s}}`, id, op, targetRaw, argsRaw))
 	} else {
-		frame = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"invoke.call","params":{"operation":%q,"arguments":%s}}`, id, operation, argsRaw))
+		frame = []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"invoke.call","params":{"operation":%s,"arguments":%s}}`, id, op, argsRaw))
 	}
 	ob, qerr := s.enqueue(ctx, frame)
 	if qerr != nil {
@@ -807,5 +811,5 @@ func (p *Plugin) ServeSessionReady(mark string, r ReadyReport, admit SessionAdmi
 		return p.writeDescriptors(os.Stdout)
 	}
 	fmt.Fprintln(os.Stderr, ReadyLine(mark, r))
-	return p.serveSession(os.Stdin, os.Stdout, admit)
+	return p.serveSession(pollableStdin(), os.Stdout, admit)
 }

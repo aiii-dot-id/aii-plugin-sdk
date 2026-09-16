@@ -361,12 +361,12 @@ var HTTP HTTPClient
 // .
 // .
 // .
-// .
-// .
-// .
-// .
 const CredentialPlaceholder = "{credential}"
 
+// .
+// .
+// .
+// .
 type HTTPOptions struct {
 	// .
 	// .
@@ -570,7 +570,14 @@ func (s *HTTPStream) Next() (chunk []byte, done bool, err error) {
 	if res != nil && len(res.OperationResult) > 0 {
 		or := Object(res.OperationResult)
 		if b64, ok := or.String("data_b64"); ok && b64 != "" {
-			chunk, _ = base64.StdEncoding.DecodeString(b64)
+			decoded, derr := base64.StdEncoding.DecodeString(b64)
+			if derr != nil {
+				// .
+				// .
+				s.done = true
+				return nil, true, fmt.Errorf("aiiosdk: http.read answered a chunk that is not base64: %w", derr)
+			}
+			chunk = decoded
 		}
 		if d, ok := or.Bool("done"); ok {
 			done = d

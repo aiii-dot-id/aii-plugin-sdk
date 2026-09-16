@@ -123,3 +123,18 @@ func TestMarshalValueFloatForms(t *testing.T) {
 		}
 	}
 }
+
+// .
+// .
+// .
+func TestAListOfObjectsIsAResult(t *testing.T) {
+	v := []map[string]any{{"b": 2, "a": "x"}, {}}
+	got, err := marshalValue(v)
+	if err != nil {
+		t.Fatalf("[]map[string]any refused: %v", err)
+	}
+	want, _ := json.Marshal(v)
+	if string(got) != string(want) {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}

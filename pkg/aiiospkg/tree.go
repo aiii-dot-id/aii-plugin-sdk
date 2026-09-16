@@ -284,13 +284,11 @@ func ReadTree(dir string) (*Tree, error) {
 			if err != nil {
 				return err
 			}
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			if info.Mode().Perm()&0o111 != 0 {
-				t.Exec[rel] = true
-			}
+			// .
+			// .
+			// .
+			// .
+			// .
 			t.Add(rel, content)
 			return nil
 		default:

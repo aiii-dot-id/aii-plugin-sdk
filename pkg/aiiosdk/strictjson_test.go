@@ -124,9 +124,18 @@ func TestValidateStrictStructure(t *testing.T) {
 	}
 	// .
 	// .
-	depth := 200
-	deep := strings.Repeat(`{"a":`, depth) + "1" + strings.Repeat("}", depth)
-	if err := ValidateStrict([]byte(deep)); err != nil {
-		t.Fatalf("depth %d must validate: %v", depth, err)
+	// .
+	// .
+	at := strings.Repeat(`{"a":`, maxScanDepth) + "1" + strings.Repeat("}", maxScanDepth)
+	if err := ValidateStrict([]byte(at)); err != nil {
+		t.Fatalf("depth %d must validate: %v", maxScanDepth, err)
+	}
+	past := strings.Repeat(`{"a":`, maxScanDepth+1) + "1" + strings.Repeat("}", maxScanDepth+1)
+	if err := ValidateStrict([]byte(past)); err == nil {
+		t.Fatalf("depth %d must be refused, not scanned", maxScanDepth+1)
+	}
+	arrays := strings.Repeat("[", maxScanDepth+1) + strings.Repeat("]", maxScanDepth+1)
+	if err := ValidateStrict([]byte(arrays)); err == nil {
+		t.Fatalf("%d nested arrays must be refused, not scanned", maxScanDepth+1)
 	}
 }

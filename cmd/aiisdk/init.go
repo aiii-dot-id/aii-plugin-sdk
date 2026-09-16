@@ -63,10 +63,8 @@ Flags:
 	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
 		return fail("%s is not empty — init refuses to write into existing work (pick -dir or an empty directory)", dir)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fail("%v", err)
-	}
 
+	// .
 	// .
 	// .
 	// .
@@ -76,8 +74,13 @@ Flags:
 	version := ""
 	if sdkDir == "" {
 		if version = installedVersion(); version == "" {
-			return fail("no aii-plugin-sdk checkout found, and this aiisdk was not installed from a released version (a build from a clone is not one): pass -sdk <path to the checkout>, set AII_SDK_DIR, or install a release with 'go install %s/cmd/aiisdk@latest'", sdkModulePath)
+			return fail("no aii-plugin-sdk checkout found, and this aiisdk was not installed from its origin (a build from a checkout is not one): pass -sdk <path to the checkout>, set AII_SDK_DIR, or install it with 'go install %s/cmd/aiisdk@latest'", sdkModulePath)
 		}
+	}
+	// .
+	// .
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fail("%v", err)
 	}
 
 	iface := interfaceIDFor(id)
@@ -163,11 +166,36 @@ func findSDKDir(flagValue string) string {
 // .
 // .
 // .
+// .
+// .
+// .
 func installedVersion() string {
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		if v := bi.Main.Version; isReleaseVersion(v) {
-			return v
-		}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	return fetchableVersion(bi)
+}
+
+// .
+// .
+// .
+// .
+func fetchableVersion(bi *debug.BuildInfo) string {
+	if bi.Main.Path != sdkModulePath {
+		return ""
+	}
+	return fetchable(bi.Main.Version, bi.Main.Sum)
+}
+
+// .
+// .
+func fetchable(version, sum string) string {
+	if isReleaseVersion(version) {
+		return version
+	}
+	if sum != "" && strings.HasPrefix(version, "v") && !strings.Contains(version, "+") && pseudoVersion.MatchString(version) {
+		return version
 	}
 	return ""
 }

@@ -199,7 +199,7 @@ func newHarness(grants []string, decls []aiiospkg.SettingDecl, settings []string
 			}
 			h.roots[name] = harnessRoot{path: abs, write: write}
 		default:
-			return nil, fmt.Errorf("-grant %q is not a grant this harness knows (kv, voice, embeddings, tools, net.outbound:host[:port|:*], root:<name>=<path>[:rw])", g)
+			return nil, fmt.Errorf("-grant %q is not a grant this harness knows (kv, voice, embeddings, memory, tools, net.outbound:host[:port|:*], net.local:<address|range|name>[:port|:*], root:<name>=<path>[:rw])", g)
 		}
 	}
 	return h, nil

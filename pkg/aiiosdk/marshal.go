@@ -110,6 +110,8 @@ func appendValue(out []byte, v any, depth int) ([]byte, error) {
 		return appendMap(out, x, depth, func(v int) any { return v })
 	case []any:
 		return appendSlice(out, x, depth, func(v any) any { return v })
+	case []map[string]any:
+		return appendSlice(out, x, depth, func(v map[string]any) any { return v })
 	case []string:
 		return appendSlice(out, x, depth, func(v string) any { return v })
 	case []int:

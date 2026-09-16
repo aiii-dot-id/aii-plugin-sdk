@@ -7,7 +7,7 @@ with the session's identity and a contiguous sequence. No models, no
 audio — the contract, whole (WRITING_A_PLUGIN.md, section 17).
 
     go test .                        # the contract, driven over the real lane
-    ./build.sh && aiisdk package     # one native package per desktop platform
+    ./build.sh && aiisdk package     # one package, three native variants
 
 An `open` may carry test knobs (`test_close_delay_ms`, `test_synth_ms`,
 `test_telemetry_burst`, `test_critical_burst`, `test_die_after_ms`) so a

@@ -14,3 +14,8 @@ honest failure. On an identity: grant `tools` and the server's host in
 `plugins.grants.<id>`, set `server_url` and, for a token, a credential
 handle in the plugins view; a stdio MCP server is a process outside
 containment and is not reachable from a plugin.
+
+The envelope names the server's host — `mcp.example.test` in `main.go`
+and in every variant of `plugin.json`: replace it with your server's
+host before building. A signed package reaches only the hosts it
+declares, and the operator grants from that list.

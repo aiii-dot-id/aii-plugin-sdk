@@ -73,9 +73,29 @@ func ValidateStrict(payload []byte) error {
 }
 
 // .
+// .
+// .
+// .
+// .
+// .
+const maxScanDepth = 64
+
+// .
 type scanner struct {
-	b []byte
-	i int
+	b     []byte
+	i     int
+	depth int
+}
+
+// .
+func (s *scanner) nested(container func() bool) bool {
+	if s.depth >= maxScanDepth {
+		return false
+	}
+	s.depth++
+	ok := container()
+	s.depth--
+	return ok
 }
 
 func (s *scanner) ws() {
@@ -95,9 +115,9 @@ func (s *scanner) value() bool {
 	}
 	switch c := s.b[s.i]; {
 	case c == '{':
-		return s.object()
+		return s.nested(s.object)
 	case c == '[':
-		return s.array()
+		return s.nested(s.array)
 	case c == '"':
 		_, ok := s.string_()
 		return ok

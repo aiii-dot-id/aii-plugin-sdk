@@ -40,7 +40,7 @@ func cmdPublish(args []string) int {
 	fs := flag.NewFlagSet("aiisdk publish", flag.ContinueOnError)
 	url := fs.String("url", "", "the URL where the .aiiospkg is (or will be) hosted (required)")
 	tier := fs.String("tier", "T1", "the tier the package is published at: T0, T1 or T2 for a WASM package; T3 is the platform's tier, and the only one for native code")
-	summary := fs.String("summary", "", "one-line summary (defaults to plugin.json title, then description)")
+	summary := fs.String("summary", "", "one-line summary (defaults to packaged title, then description)")
 	pkgPath := fs.String("pkg", "", "path to the built .aiiospkg (default: dist/<id>-<version>.aiiospkg)")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `Usage: aiisdk publish -url <where the package is hosted> [flags]
@@ -48,8 +48,9 @@ func cmdPublish(args []string) int {
 Prints the plugin's catalog entry: its id, version, tier and summary,
 and its package — the URL you host the .aiiospkg at, with its hash and
 size. A WASM plugin publishes one portable package that runs on every
-host; a native plugin publishes one package per platform its variants
-cover. The kit hosts nothing and signs no catalog: paste the entry into
+host; a native plugin publishes one catalog row per platform/architecture,
+all pointing to the same archive carrying its variants. The kit hosts
+nothing and signs no catalog: paste the entry into
 the platform's catalog, which the platform signs.
 
 Flags:
@@ -103,18 +104,25 @@ func buildCatalogEntry(cfg *aiiospkg.AuthorConfig, pkgPath, dir, url, tier, summ
 	if err != nil {
 		return nil, fmt.Errorf("read package %s: %w (run 'aiisdk package' first)", pkgPath, err)
 	}
+	manifest, err := readCatalogManifest(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := manifest.matchesAuthor(cfg); err != nil {
+		return nil, err
+	}
 	if summary == "" {
-		if summary = cfg.Title; summary == "" {
-			summary = cfg.Description
+		if summary = manifest.Title; summary == "" {
+			summary = manifest.Description
 		}
 	}
 	sum := sha256.Sum256(data)
 	base := catalogPackage{URL: url, SHA256: "sha256:" + hex.EncodeToString(sum[:]), Size: int64(len(data))}
-	entry := &catalogEntry{ID: cfg.ID, Version: cfg.Version, Tier: tier, Summary: summary}
+	entry := &catalogEntry{ID: manifest.ID, Version: manifest.Version, Tier: tier, Summary: summary}
 
 	portable, native := false, false
-	for _, v := range cfg.Variants {
-		if isWasmRuntime(v.ExecutionRuntime) {
+	for _, v := range manifest.Variants {
+		if isWasmRuntime(v.Runtime) {
 			portable = true
 		} else {
 			native = true
@@ -136,7 +144,7 @@ func buildCatalogEntry(cfg *aiiospkg.AuthorConfig, pkgPath, dir, url, tier, summ
 		return entry, nil
 	}
 	seen := map[string]bool{}
-	for _, v := range cfg.Variants {
+	for _, v := range manifest.Variants {
 		key := v.Platform + "/" + v.Arch
 		if seen[key] {
 			continue

@@ -50,8 +50,8 @@ Commands:
   devcert     Mint the local dev signing chain into .keys/: a dev
               certifier root, a certified dev publisher, and the
               root's EMPTY revocation snapshot (T1 fails closed
-              without it). Run once per machine (keys are reusable
-              across plugins).
+              without it). Run once per plugin directory; another
+              plugin reuses the chain with 'sign -keys <dir>'.
   sign        Sign the staged package with the dev publisher key and
               repack: dist/<id>-<version>.aiiospkg becomes a T1
               bundle any host proves by pinning the dev root.

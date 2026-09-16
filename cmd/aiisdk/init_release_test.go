@@ -19,6 +19,20 @@ import (
 // .
 // .
 func TestAScaffoldWiredToAReleaseBuildsStraightOutOfInit(t *testing.T) {
+	proveScaffoldBuildsFrom(t, "v0.1.0")
+}
+
+// .
+// .
+// .
+// .
+// .
+func TestAScaffoldWiredToAFetchedCommitBuildsStraightOutOfInit(t *testing.T) {
+	proveScaffoldBuildsFrom(t, "v0.0.0-20260914011552-801c1083a473")
+}
+
+func proveScaffoldBuildsFrom(t *testing.T, version string) {
+	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("no go on PATH")
 	}
@@ -27,7 +41,7 @@ func TestAScaffoldWiredToAReleaseBuildsStraightOutOfInit(t *testing.T) {
 		t.Fatal(err)
 	}
 	proxy := t.TempDir()
-	if err := serveKitAsRelease(kit, proxy, "v0.1.0"); err != nil {
+	if err := serveKitAsRelease(kit, proxy, version); err != nil {
 		t.Fatal(err)
 	}
 	cache := t.TempDir()
@@ -72,7 +86,7 @@ func TestAScaffoldWiredToAReleaseBuildsStraightOutOfInit(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, content := range map[string]string{
-		"go.mod":  goModTemplate("com.example.hello", "", "v0.1.0"),
+		"go.mod":  goModTemplate("com.example.hello", "", version),
 		"main.go": mainGoTemplate("com.example.hello"),
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
@@ -83,7 +97,7 @@ func TestAScaffoldWiredToAReleaseBuildsStraightOutOfInit(t *testing.T) {
 		t.Fatalf("the release could not be resolved from its origin: %v", err)
 	}
 	sum, err := os.ReadFile(filepath.Join(dir, "go.sum"))
-	if err != nil || !strings.Contains(string(sum), sdkModulePath+" v0.1.0") {
+	if err != nil || !strings.Contains(string(sum), sdkModulePath+" "+version) {
 		t.Fatalf("go.sum names the kit at the release: %v\n%s", err, sum)
 	}
 	if err := ensureModules(dir); err != nil {

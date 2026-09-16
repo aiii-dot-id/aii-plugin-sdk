@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "plugin_family": "voice_interface",
   "title": "voice-skel",
-  "description": "The shape of a resident speech engine: the session lane, the seven controls, events with identity; no models, no audio.",
+  "description": "The shape of a resident speech engine: the session lane, the eight controls, events with identity; no models, no audio.",
   "interface": {
     "id": "speech.session",
     "version": 1
