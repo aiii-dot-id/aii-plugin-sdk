@@ -39,6 +39,15 @@ const (
 )
 
 // .
+// .
+// .
+const (
+	ScopeHearing  = "hearing"
+	ScopeSpeaking = "speaking"
+	ScopeSession  = "session"
+)
+
+// .
 const (
 	SettingString  = "string"
 	SettingNumber  = "number"
@@ -66,6 +75,10 @@ type SettingDecl struct {
 	Required    bool              `json:"required,omitempty"`
 	Minimum     *float64          `json:"minimum,omitempty"`
 	Maximum     *float64          `json:"maximum,omitempty"`
+	// .
+	// .
+	// .
+	Scope string `json:"scope,omitempty"`
 	// .
 	// .
 	// .
@@ -122,6 +135,11 @@ func ValidateSettings(decls []SettingDecl) error {
 		case SettingString, SettingNumber, SettingInteger, SettingBoolean, SettingEnum, SettingSecret:
 		default:
 			return fmt.Errorf("setting %q: type %q is not string, number, integer, boolean, enum or secret", d.Key, d.Type)
+		}
+		switch d.Scope {
+		case "", ScopeHearing, ScopeSpeaking, ScopeSession:
+		default:
+			return fmt.Errorf("setting %q: scope %q is not %s, %s or %s", d.Key, d.Scope, ScopeHearing, ScopeSpeaking, ScopeSession)
 		}
 		if d.OAuth != nil {
 			if d.Type != SettingSecret {
@@ -307,6 +325,9 @@ func SettingsJSON(decls []SettingDecl) ([]byte, error) {
 		entry := map[string]interface{}{"key": d.Key, "type": d.Type, "title": d.Title}
 		if d.Description != "" {
 			entry["description"] = d.Description
+		}
+		if d.Scope != "" {
+			entry["scope"] = d.Scope
 		}
 		if d.Default != nil {
 			entry["default"] = d.Default

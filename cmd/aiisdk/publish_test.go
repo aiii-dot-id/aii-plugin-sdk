@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -221,5 +222,82 @@ func TestBuildCatalogEntrySummaryComesFromPackage(t *testing.T) {
 	e, err := buildCatalogEntry(cfg, path, dir, "https://h/p.aiiospkg", "T3", "")
 	if err != nil || e.Summary != "Packaged title" {
 		t.Fatalf("summary is detached from archive: %+v %v", e, err)
+	}
+}
+
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+func TestACatalogRowCarriesTheSignedHostWindow(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, "dist", "com.x.windowed-1.0.0.aiiospkg")
+	if err := os.MkdirAll(filepath.Dir(pkg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &aiiospkg.AuthorConfig{ID: "com.x.windowed", Version: "1.0.0", Title: "Windowed",
+		AiiosMinVersion: "0.1.7", AiiosMaxExclusiveVersion: "0.2.0",
+		Variants: []aiiospkg.AuthorVariant{{VariantID: "wasm", Platform: "linux", Arch: "x86_64", ExecutionRuntime: "wasm_component"}}}
+	writeCatalogFixture(t, cfg, pkg)
+
+	// .
+	// .
+	cfg.AiiosMinVersion, cfg.AiiosMaxExclusiveVersion = "9.9.9", "10.0.0"
+	e, err := buildCatalogEntry(cfg, "", dir, "https://h/w.aiiospkg", "T2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.AiiosMinVersion != "0.1.7" || e.AiiosMaxExclusiveVersion != "0.2.0" {
+		t.Fatalf("the row must carry the window the SIGNED package declares: %+v", e)
+	}
+
+	// .
+	raw, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"aiios_min_version":"0.1.7"`, `"aiios_max_exclusive_version":"0.2.0"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("published row is missing %s: %s", want, raw)
+		}
+	}
+}
+
+// .
+// .
+// .
+func TestACatalogRowInventsNoWindowWhereThePackageDeclaresNone(t *testing.T) {
+	dir := t.TempDir()
+	pkg := filepath.Join(dir, "dist", "com.x.any-1.0.0.aiiospkg")
+	if err := os.MkdirAll(filepath.Dir(pkg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &aiiospkg.AuthorConfig{ID: "com.x.any", Version: "1.0.0", Title: "Any",
+		Variants: []aiiospkg.AuthorVariant{{VariantID: "wasm", Platform: "linux", Arch: "x86_64", ExecutionRuntime: "wasm_component"}}}
+	writeCatalogFixture(t, cfg, pkg)
+
+	e, err := buildCatalogEntry(cfg, "", dir, "https://h/any.aiiospkg", "T2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.AiiosMinVersion != "" || e.AiiosMaxExclusiveVersion != "" {
+		t.Fatalf("no window was declared, so none may be published: %+v", e)
+	}
+	raw, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "aiios_min_version") || strings.Contains(string(raw), "aiios_max_exclusive_version") {
+		t.Fatalf("an unbounded release must publish no window fields at all: %s", raw)
 	}
 }

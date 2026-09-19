@@ -282,11 +282,13 @@ func BuildManifest(cfg *AuthorConfig, methods []string, installFiles map[string]
 		m["requirements"] = requirementsValue(cfg.Requirements)
 	}
 	for key, value := range map[string]string{
-		"publisher":   cfg.Publisher,
-		"title":       cfg.Title,
-		"description": cfg.Description,
-		"license":     cfg.License,
-		"homepage":    cfg.Homepage,
+		"aiios_min_version":           cfg.AiiosMinVersion,
+		"aiios_max_exclusive_version": cfg.AiiosMaxExclusiveVersion,
+		"publisher":                   cfg.Publisher,
+		"title":                       cfg.Title,
+		"description":                 cfg.Description,
+		"license":                     cfg.License,
+		"homepage":                    cfg.Homepage,
 	} {
 		if value != "" {
 			m[key] = value

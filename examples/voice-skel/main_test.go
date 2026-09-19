@@ -369,20 +369,41 @@ func TestEngineEchoesSessionAudioWithSpansIntact(t *testing.T) {
 	}
 	// .
 	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
 	var reply []byte
+	namedEcho := false
 	for {
 		frame, err := aiiosdk.ReadFrame(stdout, aiiosdk.MaxControlFrameBytes)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var head struct {
-			ID json.RawMessage `json:"id"`
+			ID     json.RawMessage `json:"id"`
+			Params struct {
+				Type         string `json:"type"`
+				SynthesisID  string `json:"synthesis_id"`
+				OutputStream *int64 `json:"output_stream"`
+			} `json:"params"`
 		}
 		_ = json.Unmarshal(frame, &head)
+		if head.Params.Type == "synthesis_start" && head.Params.OutputStream != nil && uint32(*head.Params.OutputStream) == outStream {
+			if head.Params.SynthesisID == "" {
+				t.Fatalf("the word that names a stream names what it carries: %s", frame)
+			}
+			namedEcho = true
+		}
 		if string(head.ID) == "2" {
 			reply = frame
 			break
 		}
+	}
+	if !namedEcho {
+		t.Fatalf("the engine echoed audio on output stream %d and never named it on the control lane", outStream)
 	}
 	var snap struct {
 		Result struct {
@@ -515,9 +536,10 @@ func TestSynthesisIsItsOwnOutputStreamEndedAtTheFence(t *testing.T) {
 // .
 // .
 // .
+// .
 func TestEngineAnswersTheOpenWithTheFormatsItSpeaks(t *testing.T) {
 	e := newEngine()
-	res, err := e.open(aiiosdk.Object(`{"session_id":"s1","audio":{"format":"s16le","input":{"rate":48000,"channels":1},"output":{"rate":48000,"channels":1}}}`))
+	res, err := e.open(aiiosdk.Object(`{"session_id":"s1","input_handle":"in:s1:mic","output_handle":"out:s1:spk","audio":{"format":"s16le","input":{"rate":48000,"channels":1},"output":{"rate":48000,"channels":1}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +548,7 @@ func TestEngineAnswersTheOpenWithTheFormatsItSpeaks(t *testing.T) {
 		t.Fatalf("the host's rate, when the engine can speak it: %v", au)
 	}
 	e2 := newEngine()
-	res, err = e2.open(aiiosdk.Object(`{"session_id":"s2","test_engine_rate":16000,"audio":{"input":{"rate":48000,"channels":1},"output":{"rate":48000,"channels":1}}}`))
+	res, err = e2.open(aiiosdk.Object(`{"session_id":"s2","test_engine_rate":16000,"input_handle":"in:s2:mic","output_handle":"out:s2:spk","audio":{"input":{"rate":48000,"channels":1},"output":{"rate":48000,"channels":1}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +556,7 @@ func TestEngineAnswersTheOpenWithTheFormatsItSpeaks(t *testing.T) {
 	if au["input"].(map[string]any)["rate"] != 16000 || au["output"].(map[string]any)["rate"] != 16000 {
 		t.Fatalf("the rate a test names, for both directions: %v", au)
 	}
-	if _, err := newEngine().open(aiiosdk.Object(`{"session_id":"s3","audio":{"input":{"rate":48000,"channels":2},"output":{"rate":48000,"channels":2}}}`)); err == nil {
+	if _, err := newEngine().open(aiiosdk.Object(`{"session_id":"s3","input_handle":"in:s3:mic","output_handle":"out:s3:spk","audio":{"input":{"rate":48000,"channels":2},"output":{"rate":48000,"channels":2}}}`)); err == nil {
 		t.Fatal("stereo input must be refused at the open")
 	}
 }

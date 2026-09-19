@@ -46,6 +46,16 @@ type AuthorConfig struct {
 	PluginFamily string `json:"plugin_family"`
 
 	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	AiiosMinVersion          string `json:"aiios_min_version,omitempty"`
+	AiiosMaxExclusiveVersion string `json:"aiios_max_exclusive_version,omitempty"`
+
+	// .
 	Publisher   string `json:"publisher,omitempty"`
 	Title       string `json:"title,omitempty"`
 	Description string `json:"description,omitempty"`
@@ -186,6 +196,26 @@ func (c *AuthorConfig) Root() string { return c.ID + "-" + c.Version }
 // .
 // .
 // .
+// .
+// .
+// .
+// .
+// .
+func validHostWindow(min, maxExclusive string) error {
+	for _, b := range [][2]string{{"aiios_min_version", min}, {"aiios_max_exclusive_version", maxExclusive}} {
+		if b[1] != "" && !ValidHostVersion(b[1]) {
+			return fmt.Errorf("%s %q is not an AII OS version (three numbers, major.minor.patch; no prerelease or build metadata)", b[0], b[1])
+		}
+	}
+	if min == "" || maxExclusive == "" {
+		return nil
+	}
+	if CompareHostVersion(min, maxExclusive) >= 0 {
+		return fmt.Errorf("the host window is empty: aiios_min_version %s is not below aiios_max_exclusive_version %s", min, maxExclusive)
+	}
+	return nil
+}
+
 func validVersion(version string) error {
 	if strings.ContainsAny(version, `/\`) {
 		return fmt.Errorf("version %q must be one path component: it names the staged directory and the bundle root", version)
@@ -214,6 +244,21 @@ func LoadAuthorConfig(path string) (*AuthorConfig, error) {
 	if dec.More() {
 		return nil, fmt.Errorf("%s: trailing data after the plugin.json object", path)
 	}
+	// .
+	// .
+	// .
+	var written map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &written); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	for _, name := range []string{"aiios_min_version", "aiios_max_exclusive_version"} {
+		if value, present := written[name]; present {
+			var bound string
+			if json.Unmarshal(value, &bound) != nil || !ValidHostVersion(bound) {
+				return nil, fmt.Errorf("%s: %s must be three decimal numbers, major.minor.patch; omit the key to declare no bound", path, name)
+			}
+		}
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -239,6 +284,9 @@ func (c *AuthorConfig) Validate() error {
 		return fmt.Errorf("version is required")
 	}
 	if err := validVersion(c.Version); err != nil {
+		return err
+	}
+	if err := validHostWindow(c.AiiosMinVersion, c.AiiosMaxExclusiveVersion); err != nil {
 		return err
 	}
 	if !enumHas(c.PluginFamily, "channel_adapter", "provider_bridge", "tool_bridge", "voice_interface") {

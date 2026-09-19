@@ -114,6 +114,12 @@ type engine struct {
 	synthLen   time.Duration
 	rate       int
 	streams    uint32
+	// .
+	// .
+	// .
+	// .
+	// .
+	hasInput bool
 
 	// .
 	// .
@@ -126,7 +132,7 @@ type engine struct {
 }
 
 func newEngine() *engine {
-	return &engine{gens: map[string]bool{}, byID: map[string]*generation{}, inputState: "accepting", synthLen: 200 * time.Millisecond, rate: 16000}
+	return &engine{gens: map[string]bool{}, byID: map[string]*generation{}, inputState: "accepting", synthLen: 200 * time.Millisecond, rate: 16000, hasInput: true}
 }
 
 // .
@@ -193,10 +199,64 @@ func (e *engine) control(s *aiiosdk.Session, op string, args aiiosdk.Object) (an
 	return nil, fmt.Errorf("voice-skel: unknown control %q", op)
 }
 
+// .
+// .
+// .
+// .
+func openAudio(args aiiosdk.Object) (aiiosdk.SessionAudio, error) {
+	if au := aiiosdk.Object(args.Raw("audio")); args.Has("audio") && !au.Has("input") && !au.Has("output") && au.Has("rate") {
+		if format, ok := au.String("format"); au.Has("format") && (!ok || format != "s16le") {
+			return aiiosdk.SessionAudio{}, fmt.Errorf("open refused: audio.format must be s16le")
+		}
+		rate, _ := au.Int("rate")
+		ch, ok := au.Int("channels")
+		if !ok {
+			ch = 1
+		}
+		in, _ := args.String("input_handle")
+		out, _ := args.String("output_handle")
+		f := aiiosdk.SessionFormat{Rate: int(rate), Channels: int(ch)}
+		return aiiosdk.SessionAudio{Topology: aiiosdk.TopologyDuplex, InputHandle: in, OutputHandle: out, Input: f, Output: f}, nil
+	}
+	return aiiosdk.ParseSessionAudio(args)
+}
+
 func (e *engine) open(args aiiosdk.Object) (any, error) {
 	id, _ := args.String("session_id")
 	if id == "" {
 		return nil, fmt.Errorf("open needs a session_id")
+	}
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	topo, err := openAudio(args)
+	if err != nil {
+		return nil, err
+	}
+	rate := 16000
+	if topo.Topology != aiiosdk.TopologyControlOnly {
+		named := topo.Input
+		if !topo.HasInput() {
+			named = topo.Output
+		}
+		if named.Channels != 1 {
+			return nil, fmt.Errorf("open refused: this engine speaks mono only, not %d channels", named.Channels)
+		}
+		if named.Rate < 8000 || named.Rate > 48000 {
+			return nil, fmt.Errorf("open refused: this engine speaks 8 to 48 kHz, not %d Hz", named.Rate)
+		}
+		rate = named.Rate
+	}
+	if r, ok := args.Int("test_engine_rate"); ok && r > 0 {
+		rate = int(r)
 	}
 	e.mu.Lock()
 	if e.lifecycle != "" && e.lifecycle != "closed" {
@@ -205,36 +265,16 @@ func (e *engine) open(args aiiosdk.Object) (any, error) {
 	}
 	e.sessionID, e.lifecycle, e.seq, e.stateSeq = id, "open", 0, 0
 	e.inputState, e.admittedEnd, e.processedEnd, e.finished = "accepting", 0, 0, false
+	// .
+	// .
+	e.hasInput = topo.Topology != aiiosdk.TopologyOutputOnly
+	if !e.hasInput {
+		e.inputState = "absent"
+	}
 	e.completion = nil
 	e.byID = map[string]*generation{}
 	e.synth, e.playID, e.playing, e.queued = nil, "", false, 0
-	// .
-	// .
-	// .
-	// .
-	// .
-	// .
-	// .
-	e.rate = 16000
-	if raw := args.Raw("audio"); raw != nil {
-		au := aiiosdk.Object(raw)
-		in := au
-		if sub := au.Raw("input"); sub != nil {
-			in = aiiosdk.Object(sub)
-		}
-		if ch, ok := in.Int("channels"); ok && ch != 1 {
-			return nil, fmt.Errorf("open refused: this engine speaks mono only, not %d channels", ch)
-		}
-		if r, ok := in.Int("rate"); ok {
-			if r < 8000 || r > 48000 {
-				return nil, fmt.Errorf("open refused: this engine speaks 8 to 48 kHz, not %d Hz", r)
-			}
-			e.rate = int(r)
-		}
-	}
-	if r, ok := args.Int("test_engine_rate"); ok && r > 0 {
-		e.rate = int(r)
-	}
+	e.rate = rate
 	e.closeDelay, e.synthLen = 0, 200*time.Millisecond
 	if ms, ok := args.Int("test_close_delay_ms"); ok {
 		e.closeDelay = time.Duration(ms) * time.Millisecond
@@ -267,9 +307,15 @@ func (e *engine) open(args aiiosdk.Object) (any, error) {
 			e.emit("transcript_final", map[string]any{"text": fmt.Sprintf("utterance %d", i+1), "speaker": "speaker-1"})
 		}
 	}()
-	fmtOut := map[string]any{"rate": e.rate, "channels": 1}
-	return map[string]any{"session_id": id, "accepted": true, "state": "opening",
-		"audio": map[string]any{"input": fmtOut, "output": fmtOut}}, nil
+	// .
+	// .
+	// .
+	spoken := aiiosdk.SessionFormat{Rate: rate, Channels: 1}
+	admitted := topo.Admission(spoken, spoken)
+	if admitted == nil {
+		admitted = aiiosdk.SessionAudio{Topology: aiiosdk.TopologyDuplex}.Admission(spoken, spoken)
+	}
+	return map[string]any{"session_id": id, "accepted": true, "state": "opening", "audio": admitted}, nil
 }
 
 func (e *engine) synthesize(args aiiosdk.Object) (any, error) {
@@ -284,6 +330,10 @@ func (e *engine) synthesize(args aiiosdk.Object) (any, error) {
 		e.mu.Unlock()
 		return nil, fmt.Errorf("synthesis id %q refused: ids are never reused", sid)
 	}
+	if e.streams == math.MaxUint32 {
+		e.mu.Unlock()
+		return nil, fmt.Errorf("synthesis refused: this process has used every output stream id — an id is never reused, so it does not wrap")
+	}
 	e.gens[sid] = true
 	e.streams++
 	g := &generation{id: sid, done: make(chan struct{}), stream: e.streams}
@@ -293,6 +343,10 @@ func (e *engine) synthesize(args aiiosdk.Object) (any, error) {
 	e.playID, e.playing, e.queued = sid, true, int64(len(text))*160
 	dur, pair, rate := e.synthLen, e.audio, e.rate
 	e.mu.Unlock()
+	// .
+	// .
+	// .
+	// .
 	// .
 	// .
 	e.emit("synthesis_start", map[string]any{"synthesis_id": sid, "output_stream": g.stream})
@@ -360,6 +414,10 @@ func (e *engine) cancel(args aiiosdk.Object) (any, error) {
 	resolved := e.synth == nil || e.synth.id != sid
 	if !resolved {
 		e.synth.cancelled = true
+	} else if g := e.byID[sid]; g != nil && !g.ended {
+		// .
+		// .
+		g.cancelled, resolved = true, false
 	}
 	// .
 	// .
@@ -377,6 +435,8 @@ func (e *engine) stop(args aiiosdk.Object) (any, error) {
 	}
 	if e.synth != nil && (sid == "" || e.synth.id == sid) {
 		e.synth.stopped = true
+	} else if g := e.byID[sid]; g != nil {
+		g.stopped = true
 	}
 	e.mu.Unlock()
 	if wasPlaying {
@@ -397,6 +457,10 @@ func (e *engine) finishInput(args aiiosdk.Object) (any, error) {
 	if e.lifecycle != "open" {
 		e.mu.Unlock()
 		return nil, fmt.Errorf("finish_input refused: the session is %s", e.lifecycle)
+	}
+	if !e.hasInput {
+		e.mu.Unlock()
+		return nil, fmt.Errorf("finish_input refused: this session has no input direction — it was opened output-only, and there is no cutoff to fix")
 	}
 	if e.finished {
 		// .
@@ -510,7 +574,10 @@ func (e *engine) close(args aiiosdk.Object) (any, error) {
 	}
 	switch mode {
 	case "drain":
-		if !e.finished {
+		// .
+		// .
+		// .
+		if e.hasInput && !e.finished {
 			e.mu.Unlock()
 			return nil, fmt.Errorf("drain close refused: no finish_input cutoff was fixed — a drain without a boundary is an abort that lies")
 		}
@@ -520,12 +587,17 @@ func (e *engine) close(args aiiosdk.Object) (any, error) {
 		if e.synth != nil {
 			e.synth.cancelled, e.synth.stopped = true, true
 		}
+		for _, g := range e.byID {
+			if !g.ended {
+				g.cancelled, g.stopped = true, true
+			}
+		}
 		e.playing, e.queued = false, 0
 	default:
 		e.mu.Unlock()
 		return nil, fmt.Errorf("close needs mode drain or abort, not %q", mode)
 	}
-	g, delay, state := e.synth, e.closeDelay, e.lifecycle
+	g, delay, state, hears := e.synth, e.closeDelay, e.lifecycle, e.hasInput
 	e.mu.Unlock()
 	go func() {
 		// .
@@ -535,7 +607,7 @@ func (e *engine) close(args aiiosdk.Object) (any, error) {
 		if g != nil {
 			<-g.done
 		}
-		if mode == "drain" {
+		if mode == "drain" && hears {
 			for {
 				e.mu.Lock()
 				tail := e.inputState == "finished"
@@ -621,8 +693,21 @@ func endStream(pair *aiiosdk.AudioPair, g *generation) {
 // .
 // .
 // .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
+// .
 func (e *engine) echoAudio(pair *aiiosdk.AudioPair) {
-	var inStream, outStream uint32
+	var inStream uint32
+	var g *generation
 	first := true
 	for {
 		fr, err := pair.Read()
@@ -630,25 +715,81 @@ func (e *engine) echoAudio(pair *aiiosdk.AudioPair) {
 			return
 		}
 		e.mu.Lock()
+		if !e.hasInput {
+			// .
+			// .
+			e.mu.Unlock()
+			continue
+		}
 		switch fr.Kind {
 		case aiiosdk.AudioPCM:
 			e.audioIn = fr.Start + fr.Samples(1)
 		case aiiosdk.AudioEnd, aiiosdk.AudioDiscontinuity:
 			e.audioIn = fr.Start
 		}
+		var announce *generation
 		if first || fr.Stream != inStream {
-			first, inStream = false, fr.Stream
-			e.streams++
-			outStream = e.streams
+			first, inStream, g = false, fr.Stream, nil
+			for e.streams < math.MaxUint32 {
+				e.streams++
+				if e.gens[fmt.Sprintf("echo-%d", e.streams)] {
+					continue
+				}
+				g = &generation{id: fmt.Sprintf("echo-%d", e.streams), done: make(chan struct{}), stream: e.streams}
+				e.gens[g.id], e.byID[g.id] = true, g
+				announce = g
+				break
+			}
 		}
+		fenced := g != nil && (g.cancelled || g.stopped)
 		e.mu.Unlock()
-		fr.Stream = outStream
+		if g == nil {
+			continue
+		}
+		if announce != nil {
+			e.emit("synthesis_start", map[string]any{"synthesis_id": g.id, "output_stream": g.stream})
+		}
+		if g.ended {
+			continue
+		}
+		if fenced {
+			// .
+			fr = aiiosdk.AudioFrame{Kind: aiiosdk.AudioEnd, Seq: fr.Seq, Start: g.out.Load()}
+		}
+		fr.Stream = g.stream
 		if err := pair.Write(fr); err != nil {
 			return
 		}
 		e.mu.Lock()
 		e.audioOut = e.audioIn
+		if fr.Kind == aiiosdk.AudioPCM {
+			// .
+			// .
+			// .
+			// .
+			// .
+			// .
+			// .
+			g.out.Store(fr.Start + fr.Samples(1))
+		} else if fr.Kind == aiiosdk.AudioDiscontinuity || fr.Kind == aiiosdk.AudioEnd {
+			// .
+			g.out.Store(fr.Start)
+		}
+		ended := fr.Kind == aiiosdk.AudioEnd
+		if ended {
+			g.ended = true
+		}
+		cancelled := g.cancelled
 		e.mu.Unlock()
+		if ended {
+			close(g.done)
+			terminal := map[string]any{"synthesis_id": g.id, "output_stream": g.stream, "delivered_samples": g.out.Load(), "playback_verified": false}
+			if cancelled {
+				e.emit("synthesis_cancelled", terminal)
+			} else {
+				e.emit("synthesis_end", terminal)
+			}
+		}
 	}
 }
 
@@ -669,12 +810,18 @@ func (e *engine) status() any {
 	if e.playing {
 		playState = "playing"
 	}
+	recognition := map[string]any{"utterance_open": false, "finalization_pending": e.inputState == "finishing"}
+	if !e.hasInput {
+		// .
+		// .
+		recognition["state"] = "inactive"
+	}
 	return map[string]any{
 		"session_id": e.sessionID, "state_sequence": e.stateSeq, "lifecycle": e.lifecycle,
 		"input":            map[string]any{"state": e.inputState, "admitted_end_sample": e.admittedEnd, "processed_end_sample": e.processedEnd, "received_end_sample": e.audioIn},
 		"input_completion": e.completion,
 		"audio":            map[string]any{"input_end_sample": e.audioIn, "output_end_sample": e.audioOut},
-		"recognition":      map[string]any{"utterance_open": false, "finalization_pending": e.inputState == "finishing"},
+		"recognition":      recognition,
 		"synthesis":        map[string]any{"synthesis_id": synthID, "state": synthState},
 		"playback":         map[string]any{"synthesis_id": e.playID, "state": playState, "queued_samples": e.queued},
 	}

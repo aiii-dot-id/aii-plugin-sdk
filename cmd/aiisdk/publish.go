@@ -29,11 +29,20 @@ type catalogPackage struct {
 }
 
 type catalogEntry struct {
-	ID       string           `json:"id"`
-	Version  string           `json:"version"`
-	Tier     string           `json:"tier"`
-	Summary  string           `json:"summary,omitempty"`
-	Packages []catalogPackage `json:"packages"`
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Tier    string `json:"tier"`
+	Summary string `json:"summary,omitempty"`
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	AiiosMinVersion          string           `json:"aiios_min_version,omitempty"`
+	AiiosMaxExclusiveVersion string           `json:"aiios_max_exclusive_version,omitempty"`
+	Packages                 []catalogPackage `json:"packages"`
 }
 
 func cmdPublish(args []string) int {
@@ -118,7 +127,8 @@ func buildCatalogEntry(cfg *aiiospkg.AuthorConfig, pkgPath, dir, url, tier, summ
 	}
 	sum := sha256.Sum256(data)
 	base := catalogPackage{URL: url, SHA256: "sha256:" + hex.EncodeToString(sum[:]), Size: int64(len(data))}
-	entry := &catalogEntry{ID: manifest.ID, Version: manifest.Version, Tier: tier, Summary: summary}
+	entry := &catalogEntry{ID: manifest.ID, Version: manifest.Version, Tier: tier, Summary: summary,
+		AiiosMinVersion: manifest.AiiosMinVersion, AiiosMaxExclusiveVersion: manifest.AiiosMaxExclusiveVersion}
 
 	portable, native := false, false
 	for _, v := range manifest.Variants {

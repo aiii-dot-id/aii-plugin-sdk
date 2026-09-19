@@ -22,8 +22,12 @@ const (
 	// .
 	// .
 	// .
-	MaxModels         = 256
-	MaxProfileModels  = 128
+	MaxModels        = 256
+	MaxProfileModels = 128
+	// .
+	// .
+	// .
+	MaxStartupMS      = 3600000
 	MaxModelBytes     = 16 << 30
 	maxModelPathBytes = 255
 	maxModelPathDepth = 8
@@ -48,9 +52,32 @@ type AcceleratorProfile struct {
 	RuntimeLibraries []string `json:"runtime_libraries,omitempty"`
 	Precision        string   `json:"precision"`
 	Models           []string `json:"models"`
-	MemoryBytes      int64    `json:"memory_bytes"`
-	SessionLimit     int      `json:"session_limit"`
-	Fallback         string   `json:"fallback"`
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	MemoryBytes int64 `json:"memory_bytes"`
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	DeviceMemoryBytes *int64 `json:"device_memory_bytes,omitempty"`
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	StartupMS    *int64 `json:"startup_ms,omitempty"`
+	SessionLimit int    `json:"session_limit"`
+	Fallback     string `json:"fallback"`
 }
 
 // .
@@ -125,7 +152,16 @@ func ValidateAcceleratorProfile(variantID string, p *AcceleratorProfile) error {
 		}
 	}
 	if p.MemoryBytes <= 0 || p.SessionLimit <= 0 {
-		return fmt.Errorf("variant %s: accelerator memory_bytes and session_limit are measured, positive numbers", variantID)
+		return fmt.Errorf("variant %s: accelerator memory_bytes and session_limit are declared, positive numbers", variantID)
+	}
+	// .
+	// .
+	// .
+	if p.DeviceMemoryBytes != nil && *p.DeviceMemoryBytes < 0 {
+		return fmt.Errorf("variant %s: accelerator device_memory_bytes is a reservation in bytes (omit it where there is nothing to declare; 0 declares no device allocation)", variantID)
+	}
+	if p.StartupMS != nil && (*p.StartupMS <= 0 || *p.StartupMS > MaxStartupMS) {
+		return fmt.Errorf("variant %s: accelerator startup_ms is an allowance of 1..%d milliseconds (omit it to take the host's default)", variantID, MaxStartupMS)
 	}
 	if p.Fallback != "none" && p.Fallback != "reported" {
 		return fmt.Errorf("variant %s: accelerator fallback is \"none\" or \"reported\" — never taken silently", variantID)
@@ -189,6 +225,12 @@ func AcceleratorJSON(variants []AuthorVariant) ([]byte, bool, error) {
 		}
 		p := v.Accelerator
 		entry := map[string]interface{}{"os": p.OS, "arch": p.Arch, "backend": p.Backend, "precision": p.Precision, "models": stringList(p.Models), "memory_bytes": p.MemoryBytes, "session_limit": p.SessionLimit, "fallback": p.Fallback}
+		if p.DeviceMemoryBytes != nil {
+			entry["device_memory_bytes"] = *p.DeviceMemoryBytes
+		}
+		if p.StartupMS != nil {
+			entry["startup_ms"] = *p.StartupMS
+		}
 		if len(p.Operators) > 0 {
 			entry["operators"] = stringList(p.Operators)
 		}

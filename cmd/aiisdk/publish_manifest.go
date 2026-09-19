@@ -32,6 +32,13 @@ type catalogManifest struct {
 	Title       string           `json:"title"`
 	Description string           `json:"description"`
 	Variants    []catalogVariant `json:"variants"`
+	// .
+	// .
+	// .
+	// .
+	// .
+	AiiosMinVersion          string `json:"aiios_min_version"`
+	AiiosMaxExclusiveVersion string `json:"aiios_max_exclusive_version"`
 }
 
 func readCatalogManifest(data []byte) (*catalogManifest, error) {

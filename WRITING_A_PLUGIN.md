@@ -951,6 +951,40 @@ Two more rules close a conversation honestly:
   retries, which re-arm nothing; a changed cutoff is refused). The host
   settles its reply work and admits the final synthesis only after that
   event; never invent a transcript to make a Finish resolve.
+- Every output stream is NAMED before it carries audio, and an id is
+  used once. Allocate output stream ids from one counter for the life of
+  the process — never reset by a new session, never reused, refused
+  rather than wrapped when they run out — and introduce each stream on
+  the control lane with `synthesis_start` (`synthesis_id`, a strict
+  integer `output_stream`) before its first frame. The host binds the
+  stream to the session that said that word and routes every audio frame
+  by the binding alone, never by which session is listening when the frame
+  arrives: audio on a stream nobody named is held a bounded while for the
+  word, then discarded, and a word that names a stream already ended — or
+  one another session used — is refused and faults the session. Nothing of
+  a stream follows its END.
+- A session may have NO INPUT, and it says so: an output-only session
+  (typed replies spoken with no microphone) is the same `open` with
+  `audio.input` PRESENT and `null` and no `input_handle` at all. It is not
+  an empty input and not a finished one. Open no hearing path; confirm the
+  topology in the admission in the same words (`audio.input: null` —
+  a host refuses an admission that leaves the key out, or answers with a
+  direction it did not bind); report `input.state: "absent"`,
+  `recognition.state: "inactive"` and `input_completion: null`; refuse
+  `finish_input`; never emit `input_finished` or a transcript; and let a
+  drain close complete on the receipts alone, with no input boundary.
+  Every other shape is refused at the open: a handle without its format, a
+  format without its handle, an `input_handle` that is null or empty, a
+  missing `audio.input`, a missing output. `aiiosdk.ParseSessionAudio`
+  reads the open by exactly these rules and `SessionAudio.Admission`
+  builds the confirming answer; `vectors/session_topology.json` is the
+  runtime's file of examples, and both are held to it.
+- An output stream you announce is one you keep a record for. The host
+  forwards the page's playback report for every stream it delivered, so a
+  stream introduced by `synthesis_start` with no generation behind it
+  refuses the very report the host is obliged to send. Register it before
+  you announce it, account what it carried and its END, and hold its
+  terminal receipt to the rules every other generation's is held to.
 - `playback_report` is the host forwarding the page's rendered-sample
   evidence for one output stream: `synthesis_id`, a strict integer
   `output_stream`, a monotonic `rendered_samples` in YOUR output clock, a
