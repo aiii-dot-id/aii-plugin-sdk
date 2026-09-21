@@ -181,7 +181,7 @@ func TestRespondEnvelope(t *testing.T) {
 		members := assertResponseContract(t, p.respond([]byte(`{"jsonrpc":"2.0","id":9,"method":"rpc.connect","params":{}}`)), "9")
 		eo := decodeErrorMember(t, members)
 		if eo.Code != -32601 || eo.Message != "method not found" || eo.Data.ReasonCode != "METHOD_NOT_FOUND" {
-			t.Fatalf("want the bbb_dispatch.c:428-433 shape, got %+v", eo)
+			t.Fatalf("want the audited C dispatch shape, got %+v", eo)
 		}
 	})
 
@@ -322,7 +322,7 @@ func TestRespondHandlerOutcomes(t *testing.T) {
 		members := assertResponseContract(t, p.respond(invokeFrame(`"h1"`, "focus.bug", "{}")), `"h1"`)
 		eo := decodeErrorMember(t, members)
 		if eo.Code != -32603 || eo.Message != "plugin handler failed" || eo.Data.ReasonCode != "PLUGIN_HANDLER_FAILED" {
-			t.Fatalf("want the bbb_dispatch.c:444-450 shape, got %+v", eo)
+			t.Fatalf("want the audited handler-failed object, got %+v", eo)
 		}
 	})
 
