@@ -193,13 +193,6 @@ func TestDecodeHostReplyEdges(t *testing.T) {
 		}
 	})
 
-	t.Run("status absent with no booleans defaults to succeeded", func(t *testing.T) {
-		res, err := decodeHostReply([]byte(`{"operation_result":{"v":1}}`))
-		if err != nil || !res.Succeeded() {
-			t.Fatalf("got %+v %v", res, err)
-		}
-	})
-
 	t.Run("camel reasonCode wins over snake", func(t *testing.T) {
 		res, _ := decodeHostReply([]byte(`{"status":"failed","reasonCode":"CAMEL","reason_code":"SNAKE"}`))
 		if res.ReasonCode != "CAMEL" {
@@ -236,5 +229,52 @@ func TestInvokeCallValidation(t *testing.T) {
 	}
 	if gotParams != `{"operation":"custom.op"}` {
 		t.Fatalf("omitempty members: %s", gotParams)
+	}
+}
+
+// .
+// .
+// .
+// .
+// .
+// .
+func TestAReplyThatStatesNoOutcomeIsNotASuccess(t *testing.T) {
+	for _, reply := range []string{
+		`{}`,
+		`{"operation_result":{"v":1}}`,
+		`{"external_receipt":{}}`,
+		`{"status":null}`,
+		`{"status":7,"operation_result":{"v":1}}`,
+		`{"reason":"x"}`,
+		`{"ok":"yes","operation_result":{"v":1}}`,
+		`{"success":1}`,
+		`{"status":""}`,
+	} {
+		res, err := decodeHostReply([]byte(reply))
+		if err == nil {
+			t.Errorf("%s decoded as status %q with no error", reply, res.Status)
+			continue
+		}
+		var d *Denied
+		var oe *OperationError
+		if errors.As(err, &d) || errors.As(err, &oe) {
+			t.Errorf("%s: a reply outside the contract is a plain fault, not an outcome the host stated; got %T", reply, err)
+		}
+	}
+	withHost(t, func([]byte) ([]byte, error) { return []byte(`{}`), nil })
+	if _, err := KV.Put("k", "v"); err == nil {
+		t.Error("kv.put answered {} and the plugin was told the write happened")
+	}
+}
+
+// .
+func TestAnAbsentStatusTakesTheBooleansWord(t *testing.T) {
+	res, err := decodeHostReply([]byte(`{"success":true,"ok":true,"operation_result":{"v":1}}`))
+	if err != nil || !res.Succeeded() {
+		t.Fatalf("booleans true and no status: got %+v %v", res, err)
+	}
+	res, err = decodeHostReply([]byte(`{"ok":true}`))
+	if err != nil || !res.Succeeded() {
+		t.Fatalf("ok alone: got %+v %v", res, err)
 	}
 }

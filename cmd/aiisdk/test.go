@@ -457,14 +457,25 @@ func finish(rep *report, h *harness) int {
 	}
 	fmt.Println("  harness observations are local and are not receipts; a host writes receipts, this command does not.")
 	fmt.Println("  scope: local = ran here · locally_verified = a check read back here · host = a boundary this command does not cross.")
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	var reportErr error
 	if rep.reportPath != "" {
-		if b, err := json.MarshalIndent(rep.envelope(), "", "  "); err == nil {
-			if werr := os.WriteFile(rep.reportPath, append(b, '\n'), 0o644); werr != nil {
-				fmt.Printf("  (could not write -report %s: %v)\n", rep.reportPath, werr)
-			} else {
-				fmt.Printf("  report: %s (schema aiisdk.qual.v1)\n", rep.reportPath)
-			}
+		if reportErr = writeReport(rep.reportPath, rep.envelope()); reportErr != nil {
+			fmt.Fprintf(os.Stderr, "aiisdk test: the -report was NOT written: %v\n", reportErr)
+		} else {
+			fmt.Printf("  report: %s (schema aiisdk.qual.v1)\n", rep.reportPath)
 		}
+	}
+	if reportErr != nil && result == "pass" {
+		fmt.Printf("RESULT: FAIL — the %d checks passed (%d cases), and the report asked for at %s was not written; whatever is at that path is not this run's\n", rep.checks, rep.cases, rep.reportPath)
+		return exitFail
 	}
 	switch result {
 	case "incomplete":
@@ -475,6 +486,31 @@ func finish(rep *report, h *harness) int {
 		fmt.Printf("RESULT: PASS (%d checks, %d cases) — LOCAL qualification only; signature, host activation and host receipt were not run (this is not deployment evidence)\n", rep.checks, rep.cases)
 	}
 	return code
+}
+
+// .
+// .
+// .
+func writeReport(path string, env qualEnvelope) error {
+	b, err := json.MarshalIndent(env, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode the report: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".aiisdk-report-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err = tmp.Write(append(b, '\n')); err == nil {
+		err = tmp.Chmod(0o644)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // .

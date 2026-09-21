@@ -175,10 +175,27 @@ func decodeHostReply(reply []byte) (*InvokeResult, error) {
 		return nil, d
 	}
 
-	res := &InvokeResult{Raw: cloneBytes(reply)}
-	if s, ok := decodeJSONString(statusRaw); ok {
-		res.Status = s
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	status, _ := decodeJSONString(statusRaw)
+	if statusRaw != nil && status == "" {
+		return nil, fmt.Errorf("aiiosdk: host reply status is not a non-empty string")
 	}
+	for _, b := range [][]byte{okRaw, successRaw} {
+		if b != nil && string(b) != "true" && string(b) != "false" {
+			return nil, fmt.Errorf("aiiosdk: host reply success boolean is not a boolean")
+		}
+	}
+	if statusRaw == nil && okRaw == nil && successRaw == nil {
+		return nil, fmt.Errorf("aiiosdk: host reply states no outcome (no status, ok or success member)")
+	}
+
+	res := &InvokeResult{Raw: cloneBytes(reply), Status: status}
 	res.OperationResult = cloneBytes(memberByKey(members, "operation_result"))
 	res.ExternalReceipt = cloneBytes(memberByKey(members, "external_receipt"))
 	if r, ok := decodeJSONString(memberByKey(members, "reason")); ok {
@@ -190,7 +207,6 @@ func decodeHostReply(reply []byte) (*InvokeResult, error) {
 		res.ReasonCode = rc
 	}
 	if res.Status == "" {
-		// .
 		// .
 		// .
 		// .
@@ -610,6 +626,11 @@ func (s *HTTPStream) Close() error {
 
 // .
 // .
+// .
+// .
+// .
+// .
+// .
 func (s *HTTPStream) ReadAll(limit int) ([]byte, error) {
 	var out []byte
 	for {
@@ -618,12 +639,12 @@ func (s *HTTPStream) ReadAll(limit int) ([]byte, error) {
 		if err != nil {
 			return out, err
 		}
-		if done {
-			return out, nil
-		}
 		if limit > 0 && len(out) > limit {
 			_ = s.Close()
 			return out, fmt.Errorf("aiiosdk: stream exceeds the %d-byte limit this plugin set", limit)
+		}
+		if done {
+			return out, nil
 		}
 	}
 }
