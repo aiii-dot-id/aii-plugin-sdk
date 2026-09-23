@@ -79,13 +79,9 @@ type harness struct {
 	// .
 	// .
 	// .
+	// .
 	privateDir string
-	roots      map[string]harnessRoot
-}
-
-type harnessRoot struct {
-	path  string
-	write bool
+	sandbox    string
 }
 
 type harnessStream struct {
@@ -143,7 +139,7 @@ func (s hostScope) matches(host string, port int) bool {
 // .
 // .
 func newHarness(grants []string, decls []aiiospkg.SettingDecl, settings []string) (*harness, error) {
-	h := &harness{kv: map[string]string{}, client: &http.Client{Timeout: harnessHTTPTimeout}, decls: decls, runSettings: map[string]interface{}{}, roots: map[string]harnessRoot{}}
+	h := &harness{kv: map[string]string{}, client: &http.Client{Timeout: harnessHTTPTimeout}, decls: decls, runSettings: map[string]interface{}{}}
 	for _, s := range settings {
 		key, raw, ok := strings.Cut(s, "=")
 		if !ok || key == "" {
@@ -179,27 +175,22 @@ func newHarness(grants []string, decls []aiiospkg.SettingDecl, settings []string
 				return nil, fmt.Errorf("-grant %q: %v", g, err)
 			}
 			h.local = append(h.local, sc)
-		case strings.HasPrefix(g, "root:"):
+		case strings.HasPrefix(g, "files="):
 			// .
-			spec := strings.TrimPrefix(g, "root:")
-			name, rest, ok := strings.Cut(spec, "=")
-			if !ok || name == "" || rest == "" {
-				return nil, fmt.Errorf("-grant %q: want root:<name>=<path>[:rw]", g)
+			// .
+			abs, err := filepath.Abs(strings.TrimPrefix(g, "files="))
+			if err == nil {
+				abs, err = filepath.EvalSymlinks(abs)
 			}
-			write := false
-			if strings.HasSuffix(rest, ":rw") {
-				write, rest = true, strings.TrimSuffix(rest, ":rw")
-			}
-			abs, err := filepath.Abs(rest)
 			if err != nil {
 				return nil, fmt.Errorf("-grant %q: %v", g, err)
 			}
 			if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
 				return nil, fmt.Errorf("-grant %q: %s is not a directory", g, abs)
 			}
-			h.roots[name] = harnessRoot{path: abs, write: write}
+			h.sandbox = abs
 		default:
-			return nil, fmt.Errorf("-grant %q is not a grant this harness knows (kv, voice, embeddings, memory, tools, net.outbound:host[:port|:*], net.local:<address|range|name>[:port|:*], root:<name>=<path>[:rw])", g)
+			return nil, fmt.Errorf("-grant %q is not a grant this harness knows (kv, voice, embeddings, memory, tools, files=<dir>, net.outbound:host[:port|:*], net.local:<address|range|name>[:port|:*])", g)
 		}
 	}
 	return h, nil
@@ -674,18 +665,53 @@ func noSymlinkOnPath(dir, rel string) error {
 // .
 // .
 // .
+// .
+func (h *harness) sandboxRel(p string) (string, string, error) {
+	if len(p) > harnessPathBytes || strings.ContainsRune(p, 0) {
+		return "", "FS_PATH_INVALID", fmt.Errorf("path over %d bytes or carrying a NUL", harnessPathBytes)
+	}
+	abs := p
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(h.sandbox, p)
+	}
+	abs = filepath.Clean(abs)
+	resolved, rest := abs, ""
+	for {
+		if r, err := filepath.EvalSymlinks(resolved); err == nil {
+			resolved = filepath.Join(r, rest)
+			break
+		}
+		parent := filepath.Dir(resolved)
+		if parent == resolved {
+			resolved = filepath.Join(resolved, rest)
+			break
+		}
+		rest = filepath.Join(filepath.Base(resolved), rest)
+		resolved = parent
+	}
+	rel, err := filepath.Rel(h.sandbox, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "FS_OUTSIDE_SANDBOX", fmt.Errorf("%s is outside the sandbox %s", p, h.sandbox)
+	}
+	if rel != "." && len(strings.Split(filepath.ToSlash(rel), "/")) > harnessPathDepth {
+		return "", "FS_PATH_INVALID", fmt.Errorf("path deeper than %d", harnessPathDepth)
+	}
+	return rel, "", nil
+}
+
+// .
+// .
+// .
+// .
 func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.RawMessage, json.RawMessage) {
 	var t struct {
 		Root string `json:"root"`
 		Path string `json:"path"`
 	}
 	_ = json.Unmarshal(target, &t)
-	if t.Root == "" {
-		return failed("OPERATION_TARGET_INVALID", nil), nil
-	}
-	var dir string
-	write := true
-	if t.Root == "private" {
+	var dir, rel string
+	switch t.Root {
+	case "private":
 		if h.privateDir == "" {
 			d, err := os.MkdirTemp("", "aiisdk-private-")
 			if err != nil {
@@ -695,18 +721,29 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 			h.observe("fs: the private directory is %s for this run (deleted at the end)", d)
 		}
 		dir = h.privateDir
-	} else {
-		r, ok := h.roots[t.Root]
-		if !ok {
-			h.observe("%s %s:%s -> denied (run with -grant root:%s=<path>[:rw])", op, t.Root, t.Path, t.Root)
-			return nil, deny(fmt.Sprintf("no harness grant names root %q (aiisdk test -grant root:%s=<path>[:rw])", t.Root, t.Root), "POLICY_DENY")
+		var err error
+		if rel, err = cleanRel(t.Path); err != nil {
+			h.observe("%s %s:%s -> denied: %v", op, t.Root, t.Path, err)
+			return nil, deny(err.Error(), "FS_PATH_INVALID")
 		}
-		dir, write = r.path, r.write
+	case "sandbox":
+		if h.sandbox == "" {
+			h.observe("%s %s:%s -> denied (run with -grant files=<dir>)", op, t.Root, t.Path)
+			return nil, deny("the plugin is not granted files (aiisdk test -grant files=<dir>)", "POLICY_DENY")
+		}
+		dir = h.sandbox
+		var code string
+		var err error
+		if rel, code, err = h.sandboxRel(t.Path); err != nil {
+			h.observe("%s %s:%s -> denied: %v", op, t.Root, t.Path, err)
+			return nil, deny(err.Error(), code)
+		}
+	default:
+		return nil, deny(fmt.Sprintf(`%s requires target.root: "private" (the plugin's own directory) or "sandbox" (the identity's sandbox)`, op), "OPERATION_TARGET_INVALID")
 	}
-	rel, err := cleanRel(t.Path)
-	if err != nil {
-		h.observe("%s %s:%s -> denied: %v", op, t.Root, t.Path, err)
-		return nil, deny(err.Error(), "FS_PATH_INVALID")
+	shown := t.Path
+	if t.Root == "private" {
+		shown = filepath.ToSlash(rel)
 	}
 	if rel == "." && op != "fs.list" {
 		return nil, deny(op+" requires target.path", "FS_PATH_INVALID")
@@ -744,7 +781,7 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 			list = append(list, entry)
 		}
 		h.observe("fs.list %s:%s -> %d entries", t.Root, t.Path, len(list))
-		return succeeded(map[string]interface{}{"root": t.Root, "path": filepath.ToSlash(rel), "entries": list, "truncated": truncated}), nil
+		return succeeded(map[string]interface{}{"root": t.Root, "path": shown, "entries": list, "truncated": truncated}), nil
 	case "fs.read":
 		var a struct {
 			Offset int64 `json:"offset"`
@@ -770,7 +807,7 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 		}
 		data, _ := io.ReadAll(io.LimitReader(f, int64(a.Length)))
 		h.observe("fs.read %s:%s -> %d bytes at %d of %d", t.Root, t.Path, len(data), a.Offset, fi.Size())
-		result := map[string]interface{}{"root": t.Root, "path": filepath.ToSlash(rel), "data_b64": base64.StdEncoding.EncodeToString(data), "bytes": len(data), "offset": a.Offset, "size": fi.Size(), "eof": a.Offset+int64(len(data)) >= fi.Size()}
+		result := map[string]interface{}{"root": t.Root, "path": shown, "data_b64": base64.StdEncoding.EncodeToString(data), "bytes": len(data), "offset": a.Offset, "size": fi.Size(), "eof": a.Offset+int64(len(data)) >= fi.Size()}
 		// .
 		// .
 		if a.Offset == 0 && a.Offset+int64(len(data)) >= fi.Size() {
@@ -792,10 +829,6 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 		// .
 		// .
 		// .
-		if !write {
-			h.observe("fs.publish %s:%s -> denied (the root is read-only; grant it :rw)", t.Root, t.Path)
-			return nil, deny(fmt.Sprintf("root %q is granted read-only", t.Root), "FS_READ_ONLY")
-		}
 		var a struct {
 			Data           *string `json:"data"`
 			DataB64        *string `json:"data_b64"`
@@ -856,7 +889,13 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 			}
 			source, size = tmp, int64(len(data))
 		} else {
-			fromRel, err := cleanRel(a.From)
+			var fromRel string
+			var err error
+			if t.Root == "private" {
+				fromRel, err = cleanRel(a.From)
+			} else {
+				fromRel, _, err = h.sandboxRel(a.From)
+			}
 			if err != nil || fromRel == "." || fromRel == rel {
 				return nil, deny("from must name a staged file in the same root", "FS_PATH_INVALID")
 			}
@@ -880,12 +919,8 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 		}
 		_ = os.Chmod(full, 0o600)
 		h.observe("fs.publish %s:%s -> %d bytes, sha256 %s, replaced=%v", t.Root, t.Path, size, digest[:12], exists)
-		return succeeded(map[string]interface{}{"root": t.Root, "path": filepath.ToSlash(rel), "size": size, "sha256": digest, "replaced": exists, "durable": true, "durability": "synced"}), nil
+		return succeeded(map[string]interface{}{"root": t.Root, "path": shown, "size": size, "sha256": digest, "replaced": exists, "durable": true, "durability": "synced"}), nil
 	case "fs.write":
-		if !write {
-			h.observe("fs.write %s:%s -> denied (the root is read-only; grant it :rw)", t.Root, t.Path)
-			return nil, deny(fmt.Sprintf("root %q is granted read-only", t.Root), "FS_READ_ONLY")
-		}
 		var a struct {
 			Data    *string `json:"data"`
 			DataB64 *string `json:"data_b64"`
@@ -935,19 +970,16 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 			size = fi.Size()
 		}
 		h.observe("fs.write %s:%s -> %d bytes (append=%v)", t.Root, t.Path, n, a.Append)
-		return succeeded(map[string]interface{}{"root": t.Root, "path": filepath.ToSlash(rel), "bytes": n, "size": size, "appended": a.Append}), nil
+		return succeeded(map[string]interface{}{"root": t.Root, "path": shown, "bytes": n, "size": size, "appended": a.Append}), nil
 	default:
-		if !write {
-			return nil, deny(fmt.Sprintf("root %q is granted read-only", t.Root), "FS_READ_ONLY")
-		}
 		if _, err := os.Lstat(filepath.Join(dir, rel)); err != nil {
-			return succeeded(map[string]interface{}{"root": t.Root, "path": filepath.ToSlash(rel), "deleted": false}), nil
+			return succeeded(map[string]interface{}{"root": t.Root, "path": shown, "deleted": false}), nil
 		}
 		if err := os.Remove(filepath.Join(dir, rel)); err != nil {
 			return failed("FS_IO_FAILED", nil), nil
 		}
 		h.observe("fs.delete %s:%s -> deleted", t.Root, t.Path)
-		return succeeded(map[string]interface{}{"root": t.Root, "path": filepath.ToSlash(rel), "deleted": true}), nil
+		return succeeded(map[string]interface{}{"root": t.Root, "path": shown, "deleted": true}), nil
 	}
 }
 

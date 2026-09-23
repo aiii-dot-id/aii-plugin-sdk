@@ -1,8 +1,7 @@
 {
-  "name": "a file from the granted folder is stored in chunks",
+  "name": "a file from the identity's sandbox is stored in chunks",
   "operation": "document.ingest",
   "arguments": {
-    "root": "docs",
     "path": "notes.md"
   },
   "settings": {

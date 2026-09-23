@@ -1,0 +1,11 @@
+{
+  "name": "an absolute path outside the sandbox is refused",
+  "operation": "document.list",
+  "arguments": {
+    "path": "/etc"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "FS_OUTSIDE_SANDBOX"
+  }
+}

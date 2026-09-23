@@ -659,25 +659,34 @@ come from: its hermetic cases prove the denials and its argument
 checks without the network, and its live cases list a public
 repository's issues with one grant.
 
-## 12. Files: your own directory, and the operator's folders
+## 12. Files: your own directory, and the identity's sandbox
 
 `sdk.Files` gives you two kinds of place. Your **private directory**
 needs no grant: declare `fs.private`, and `sdk.Files.Write(sdk.PrivateRoot,
 "index.tsv", data)` lands under the identity's data directory in a
 folder of your own, which lives as long as your release does at a
 publisher-proven tier and dies with the activation below it, like RING4.
-A **granted root** is a folder the operator chose for you by name —
-`plugins.grants.<id>.roots: [{name: "docs", path: "/…", write: false}]`
-— behind `fs.roots` and a publisher-proven tier; you read it as
-`sdk.Files.ReadAll("docs", "notes/today.md", limit)`.
+The **identity's sandbox** is the world the identity itself works in:
+its home, and the folders its operator added in Settings → Sandbox.
+Declare `fs.sandbox`; once the operator ticks **files** on your card
+(publisher-proven tier), you reach it by the paths the identity's own
+tools take — `sdk.Files.ReadAll(sdk.SandboxRoot, "projects/notes.md",
+limit)`, or an absolute path inside an added folder — so a path the
+identity hands you in a call is one you can open as given. There is no
+list of folders of your own: the operator widens the world once, for the
+identity and every plugin it grants.
 
-The host holds every path to one discipline: relative to its root, no
-traversal, no symlink followed anywhere on the way, nothing you write
-ever executable, reads in pieces under the response ceiling and writes
-in pieces under the request ceiling, and a files ceiling from the
-resource envelope. A root that contains the identity's own files — the
-ledger, the key, the store, the config, a credential file — is refused
-whole, so an operator cannot hand you their home directory by mistake.
+The host holds every path to one rule, the sandbox's own: outside the
+identity's world is refused (`FS_OUTSIDE_SANDBOX`), and so is its
+substrate — the data directory, key, store, config and installed
+plugins (`FS_PROTECTED`) — wherever the path is spelled and wherever a
+symlink leads. In your private directory a path is relative, with no
+traversal and no symlink followed. Nothing you write is ever executable;
+reads come in pieces under the response ceiling, writes in pieces under
+the request ceiling, and your private directory and what one activation
+writes into the sandbox are held to the resource envelope's files
+ceiling. Whether you may write in the sandbox at all is the operator's
+**read only** box.
 
 **A file that must never be half-written** — a store you keep whole, an
 enrollment, a snapshot — is published, not written: `sdk.Files.Publish(
@@ -701,10 +710,11 @@ a resident session the same call is `Session.HostCallTo(ctx,
 "fs.publish", {root, path}, args)`.
 
 `aiisdk test` answers the same calls: the private root is a temporary
-directory of the run, and `-grant root:docs=sample` grants a folder
-read-only (`:rw` to write). `examples/document-ingest` is the plugin
-these lessons come from: it ingests a file from a granted folder into
-RING4, keeps a private index, and its cases prove the refusals.
+directory of the run, and `-grant files=sample` stands `sample` in for
+the identity's sandbox (the harness has no substrate to keep; the host
+does). `examples/document-ingest` is the plugin these lessons come from:
+it ingests a file from the identity's sandbox into RING4, keeps a
+private index, and its cases prove the refusals.
 
 ## 13. Push from the outside: webhooks
 

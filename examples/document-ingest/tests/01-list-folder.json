@@ -1,9 +1,7 @@
 {
-  "name": "the granted folder is listed",
+  "name": "the identity's sandbox is listed",
   "operation": "document.list",
-  "arguments": {
-    "root": "docs"
-  },
+  "arguments": {},
   "expect": {
     "status": "succeeded",
     "result_contains": "\"name\":\"notes.md\""

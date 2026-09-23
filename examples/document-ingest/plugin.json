@@ -10,7 +10,7 @@
   },
   "capability_envelope": [
     "ring4.kv",
-    "fs.roots",
+    "fs.sandbox",
     "fs.private"
   ],
   "variants": [
@@ -23,7 +23,7 @@
       "admission_profile": "wasm_sandbox",
       "variant_capabilities": [
         "ring4.kv",
-        "fs.roots",
+        "fs.sandbox",
         "fs.private"
       ]
     },
@@ -36,7 +36,7 @@
       "admission_profile": "wasm_sandbox",
       "variant_capabilities": [
         "ring4.kv",
-        "fs.roots",
+        "fs.sandbox",
         "fs.private"
       ]
     },
@@ -49,7 +49,7 @@
       "admission_profile": "wasm_sandbox",
       "variant_capabilities": [
         "ring4.kv",
-        "fs.roots",
+        "fs.sandbox",
         "fs.private"
       ]
     }

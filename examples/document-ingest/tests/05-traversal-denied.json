@@ -1,12 +1,11 @@
 {
-  "name": "a traversal is refused before anything is opened",
+  "name": "a path that leaves the sandbox is refused before anything is opened",
   "operation": "document.ingest",
   "arguments": {
-    "root": "docs",
     "path": "../secret.txt"
   },
   "expect": {
     "status": "denied",
-    "reason_code": "FS_PATH_INVALID"
+    "reason_code": "FS_OUTSIDE_SANDBOX"
   }
 }

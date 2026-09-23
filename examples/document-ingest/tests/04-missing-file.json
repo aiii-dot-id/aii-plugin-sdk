@@ -2,7 +2,6 @@
   "name": "a missing file is an honest failure",
   "operation": "document.ingest",
   "arguments": {
-    "root": "docs",
     "path": "absent.md"
   },
   "expect": {

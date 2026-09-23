@@ -27,14 +27,14 @@ func init() {
 	p := sdk.New("com.aiii.examples.document-ingest")
 
 	p.Describe("document.ingest", sdk.Descriptor{
-		Summary:      "Read a text file from a granted folder and store it in chunks",
+		Summary:      "Read a text file from the identity's sandbox and store it in chunks",
 		Input:        "schemas/ingest_in.json",
 		Output:       "schemas/ingest_out.json",
 		Effects:      sdk.EffectsWriteLocal,
-		Capabilities: []string{"fs.roots", "fs.private", "ring4.kv"},
+		Capabilities: []string{"fs.sandbox", "fs.private", "ring4.kv"},
 		Family:       "documents",
 		Keywords:     []string{"ingest", "file", "document", "read", "chunks"},
-		Examples:     []string{`{"root": "docs", "path": "notes/2026-09.md"}`},
+		Examples:     []string{`{"path": "notes/2026-09.md"}`},
 	})
 	p.Handle("document.ingest", ingest)
 
@@ -49,11 +49,11 @@ func init() {
 	p.Handle("document.recall", recall)
 
 	p.Describe("document.list", sdk.Descriptor{
-		Summary:      "List what a granted folder holds",
+		Summary:      "List what a folder in the identity's sandbox holds",
 		Input:        "schemas/list_in.json",
 		Output:       "schemas/list_out.json",
 		Effects:      sdk.EffectsReadInternal,
-		Capabilities: []string{"fs.roots"},
+		Capabilities: []string{"fs.sandbox"},
 		Family:       "documents",
 	})
 	p.Handle("document.list", list)
@@ -72,15 +72,11 @@ func chunkSize() int {
 }
 
 func ingest(c sdk.Call) (any, error) {
-	root, ok := c.Args().String("root")
-	if !ok || root == "" {
-		return nil, sdk.Fail("OPERATION_ARGUMENT_INVALID", "document.ingest requires arguments.root (a granted folder's name)")
-	}
 	path, ok := c.Args().String("path")
 	if !ok || path == "" {
-		return nil, sdk.Fail("OPERATION_ARGUMENT_INVALID", "document.ingest requires arguments.path (relative to the root)")
+		return nil, sdk.Fail("OPERATION_ARGUMENT_INVALID", "document.ingest requires arguments.path (as the identity's own tools take it)")
 	}
-	text, err := sdk.Files.ReadAll(root, path, maxBytes)
+	text, err := sdk.Files.ReadAll(sdk.SandboxRoot, path, maxBytes)
 	if err != nil {
 		return failure(err)
 	}
@@ -159,12 +155,8 @@ func recall(c sdk.Call) (any, error) {
 }
 
 func list(c sdk.Call) (any, error) {
-	root, ok := c.Args().String("root")
-	if !ok || root == "" {
-		return nil, sdk.Fail("OPERATION_ARGUMENT_INVALID", "document.list requires arguments.root")
-	}
 	path, _ := c.Args().String("path")
-	entries, truncated, err := sdk.Files.List(root, path)
+	entries, truncated, err := sdk.Files.List(sdk.SandboxRoot, path)
 	if err != nil {
 		return failure(err)
 	}
@@ -172,7 +164,7 @@ func list(c sdk.Call) (any, error) {
 	for _, e := range entries {
 		out = append(out, map[string]any{"name": e.Name, "dir": e.Dir, "size": e.Size, "symlink": e.Symlink})
 	}
-	return map[string]any{"root": root, "entries": out, "truncated": truncated}, nil
+	return map[string]any{"path": path, "entries": out, "truncated": truncated}, nil
 }
 
 func words(s string) map[string]bool {
@@ -189,7 +181,7 @@ func words(s string) map[string]bool {
 
 func failure(err error) (any, error) {
 	if d, ok := sdk.AsDenied(err); ok {
-		return nil, sdk.Deny(d.ReasonCode, "the host denied "+d.Message+" — grant a root (plugins.grants.<id>.roots) and kv to enable this plugin")
+		return nil, sdk.Deny(d.ReasonCode, "the host denied "+d.Message+" — grant files and kv to enable this plugin")
 	}
 	return nil, err
 }

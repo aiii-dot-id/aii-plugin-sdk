@@ -15,13 +15,22 @@ import (
 // .
 // .
 // .
+// .
+// .
+// .
+// .
+// .
 var Files FilesClient
 
 // .
 type FilesClient struct{}
 
 // .
-const PrivateRoot = "private"
+// .
+const (
+	PrivateRoot = "private"
+	SandboxRoot = "sandbox"
+)
 
 // .
 // .

@@ -364,10 +364,10 @@ func TestAcceptance(t *testing.T) {
 
 	// .
 	{
-		stage(t, "examples/document-ingest: aiisdk build, then aiisdk test -grant kv -grant root:docs=sample")
+		stage(t, "examples/document-ingest: aiisdk build, then aiisdk test -grant kv -grant files=sample")
 		exDir := filepath.Join(clone, "examples", "document-ingest")
 		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build", "-grant", "kv", "-grant", "root:docs=sample")
+		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build", "-grant", "kv", "-grant", "files=sample")
 		for _, want := range []string{"PASS  case the granted folder is listed", "PASS  case a file from the granted folder is stored in chunks", "PASS  case recall finds the chunk about the ledger", "PASS  case a missing file is an honest failure", "PASS  case a traversal is refused before anything is opened", "PASS  case an ungranted root is denied by name", "RESULT: PASS"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("examples/document-ingest: aiisdk test must report %q:\n%s", want, out)

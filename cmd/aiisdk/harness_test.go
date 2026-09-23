@@ -329,6 +329,8 @@ func TestHarnessAnswersVerbsAndStreams(t *testing.T) {
 // .
 // .
 // .
+// .
+// .
 func TestHarnessAnswersFilesUnderTheHostsRules(t *testing.T) {
 	docs := t.TempDir()
 	outside := t.TempDir()
@@ -341,7 +343,12 @@ func TestHarnessAnswersFilesUnderTheHostsRules(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "secret"), filepath.Join(docs, "link")); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
-	h, err := newHarness([]string{"root:docs=" + docs, "root:out=" + outside + ":rw"}, nil, nil)
+	if bare, _ := newHarness(nil, nil, nil); bare != nil {
+		if _, deny := bare.answer("invoke.call", json.RawMessage(`{"operation":"fs.read","target":{"root":"sandbox","path":"notes.md"}}`)); !strings.Contains(string(deny), "-grant files=") {
+			t.Fatalf("without the grant the sandbox is refused, naming it: %s", deny)
+		}
+	}
+	h, err := newHarness([]string{"files=" + docs}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,21 +357,30 @@ func TestHarnessAnswersFilesUnderTheHostsRules(t *testing.T) {
 		res, deny := h.answer("invoke.call", json.RawMessage(params))
 		return string(res), string(deny)
 	}
-	res, deny := call(`{"operation":"fs.read","target":{"root":"docs","path":"notes.md"}}`)
-	if deny != "" || !strings.Contains(res, base64.StdEncoding.EncodeToString([]byte("# notes\nhello"))) {
-		t.Fatalf("read a granted file: %s %s", res, deny)
+	for _, path := range []string{"notes.md", filepath.ToSlash(filepath.Join(docs, "notes.md"))} {
+		res, deny := call(`{"operation":"fs.read","target":{"root":"sandbox","path":"` + path + `"}}`)
+		if deny != "" || !strings.Contains(res, base64.StdEncoding.EncodeToString([]byte("# notes\nhello"))) || !strings.Contains(res, `"path":"`+path+`"`) {
+			t.Fatalf("read %s in the sandbox, echoed as given: %s %s", path, res, deny)
+		}
 	}
-	if _, deny = call(`{"operation":"fs.write","target":{"root":"docs","path":"x"},"arguments":{"data":"x"}}`); !strings.Contains(deny, "FS_READ_ONLY") {
-		t.Fatalf("read-only: %s", deny)
+	for _, path := range []string{"link", "../secret", filepath.ToSlash(filepath.Join(outside, "secret"))} {
+		if _, deny := call(`{"operation":"fs.read","target":{"root":"sandbox","path":"` + path + `"}}`); !strings.Contains(deny, "FS_OUTSIDE_SANDBOX") {
+			t.Fatalf("%s leads outside the sandbox: %s", path, deny)
+		}
 	}
-	if _, deny = call(`{"operation":"fs.read","target":{"root":"docs","path":"link"}}`); !strings.Contains(deny, "FS_SYMLINK_REFUSED") {
-		t.Fatalf("a symlink is refused, not followed: %s", deny)
+	if _, deny := call(`{"operation":"fs.read","target":{"root":"private","path":"../secret"}}`); !strings.Contains(deny, "FS_PATH_INVALID") {
+		t.Fatalf("traversal in the private root: %s", deny)
 	}
-	if _, deny = call(`{"operation":"fs.read","target":{"root":"docs","path":"../secret"}}`); !strings.Contains(deny, "FS_PATH_INVALID") {
-		t.Fatalf("traversal: %s", deny)
+	if _, deny := call(`{"operation":"fs.read","target":{"root":"docs","path":"x"}}`); !strings.Contains(deny, "OPERATION_TARGET_INVALID") {
+		t.Fatalf("a root that is neither is refused: %s", deny)
 	}
-	if _, deny = call(`{"operation":"fs.read","target":{"root":"nope","path":"x"}}`); !strings.Contains(deny, "no harness grant names root") {
-		t.Fatalf("an ungranted root is denied by name: %s", deny)
+	res, deny := call(`{"operation":"fs.write","target":{"root":"sandbox","path":"w.txt"},"arguments":{"data":"w"}}`)
+	if deny != "" || !strings.Contains(res, `"bytes":1`) {
+		t.Fatalf("the sandbox takes a write: %s %s", res, deny)
+	}
+	res, _ = call(`{"operation":"fs.delete","target":{"root":"sandbox","path":"w.txt"}}`)
+	if !strings.Contains(res, `"deleted":true`) {
+		t.Fatalf("delete: %s", res)
 	}
 	res, deny = call(`{"operation":"fs.write","target":{"root":"private","path":"a/b.txt"},"arguments":{"data":"one"}}`)
 	if deny != "" || !strings.Contains(res, `"bytes":3`) {
@@ -385,14 +401,6 @@ func TestHarnessAnswersFilesUnderTheHostsRules(t *testing.T) {
 	res, _ = call(`{"operation":"fs.list","target":{"root":"private","path":"a"}}`)
 	if !strings.Contains(res, `"name":"b.txt"`) {
 		t.Fatalf("list: %s", res)
-	}
-	res, _ = call(`{"operation":"fs.write","target":{"root":"out","path":"w.txt"},"arguments":{"data":"w"}}`)
-	if !strings.Contains(res, `"bytes":1`) {
-		t.Fatalf("a :rw root accepts a write: %s", res)
-	}
-	res, _ = call(`{"operation":"fs.delete","target":{"root":"out","path":"w.txt"}}`)
-	if !strings.Contains(res, `"deleted":true`) {
-		t.Fatalf("delete: %s", res)
 	}
 	private := h.privateDir
 	h.closeFiles()

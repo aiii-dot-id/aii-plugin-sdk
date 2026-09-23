@@ -190,7 +190,7 @@ func appendBoundaryChecks(rep *report, packageHash, manifestHash string) {
 func cmdTest(args []string) int {
 	fs := flag.NewFlagSet("aiisdk test", flag.ExitOnError)
 	var grants grantList
-	fs.Var(&grants, "grant", "a grant for this run: kv, memory, voice, embeddings, tools, net.outbound:host[:port|:*], net.local:<address|range|name>[:port|:*] for a device on your own network, or root:<name>=<path>[:rw] (repeatable)")
+	fs.Var(&grants, "grant", "a grant for this run: kv, memory, voice, embeddings, tools, net.outbound:host[:port|:*], net.local:<address|range|name>[:port|:*] for a device on your own network, or files=<dir> for the identity's sandbox (repeatable)")
 	var settings grantList
 	fs.Var(&settings, "setting", "an operator value for a setting plugin.json declares: key=value (repeatable; a case file's settings override it)")
 	cases := fs.String("cases", "tests", "directory of case files, one JSON object per file")
