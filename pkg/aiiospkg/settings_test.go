@@ -115,3 +115,14 @@ func TestLabelledChoicesAndIntegersRoundTrip(t *testing.T) {
 		t.Fatalf("the 257th choice is refused by the bound: %v", err)
 	}
 }
+
+// .
+func TestSettingOperationsAreHeldToTheDescribedSurface(t *testing.T) {
+	decls := []SettingDecl{{Key: "model", Type: SettingString, Title: "Model", ChoicesFrom: "models"}}
+	if err := CheckSettingOperations(decls, []string{"judge", "models"}); err != nil {
+		t.Fatalf("a described operation is accepted: %v", err)
+	}
+	if err := CheckSettingOperations(decls, []string{"judge"}); err == nil || !strings.Contains(err.Error(), "choices_from") {
+		t.Fatalf("an undescribed operation is refused by name: %v", err)
+	}
+}

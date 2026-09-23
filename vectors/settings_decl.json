@@ -1085,6 +1085,49 @@
      "scope": "Speaking"
     }
    ]
+  },
+  {
+   "name": "a string whose choices a plugin operation looks up",
+   "ok": true,
+   "decl": [
+    {
+     "key": "model",
+     "type": "string",
+     "title": "Model",
+     "default": "jev-latest",
+     "choices_from": "models"
+    }
+   ]
+  },
+  {
+   "name": "an enum's choices are its own, never looked up",
+   "ok": false,
+   "error_contains": "choices_from",
+   "decl": [
+    {
+     "key": "model",
+     "type": "enum",
+     "title": "Model",
+     "values": [
+      "a",
+      "b"
+     ],
+     "choices_from": "models"
+    }
+   ]
+  },
+  {
+   "name": "choices_from names an operation",
+   "ok": false,
+   "error_contains": "choices_from",
+   "decl": [
+    {
+     "key": "model",
+     "type": "string",
+     "title": "Model",
+     "choices_from": "List Models"
+    }
+   ]
   }
  ]
 }

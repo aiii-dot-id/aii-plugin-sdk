@@ -111,6 +111,11 @@ plugin (unsigned — trust tier T0):
 	}
 	// .
 	// .
+	if err := aiiospkg.CheckSettingOperations(cfg.Settings, methods); err != nil {
+		return fail("settings: %v", err)
+	}
+	// .
+	// .
 	if len(cfg.Webhooks) > 0 {
 		if err := aiiospkg.CheckWebhookOperations(cfg.Webhooks, methods); err != nil {
 			return fail("webhooks: %v", err)

@@ -558,7 +558,34 @@ operator on the page and not handed to you; they choose again. **A
 `secret` never carries a secret.** The operator chooses one of the credential handles your
 grant lets you cite, and `vals.Handle("api_key")` gives you its name to
 pass as the `auth_profile` of an HTTP call; the broker injects the
-value into that one request and nothing else.
+value into that one request and nothing else. When your package's
+envelope declares exactly one `net.outbound` host, the operator can
+also paste the key on your card: the host keeps it as its own private
+file, makes the profile that rides it to that host only, grants it to
+you and fills in the setting — you still read a handle.
+
+**Choices your plugin looks up.** A `string` setting may name one of
+your READ operations as `choices_from` — a model list your service
+knows and your package cannot. The page calls it with no arguments when
+the card opens and on Refresh, and offers what it answers as a
+drop-down:
+
+```json
+{"key": "model", "type": "string", "title": "Model", "default": "jev-latest", "choices_from": "models"}
+```
+
+```go
+p.Describe("models", sdk.Descriptor{Summary: "List the models the service offers",
+	Effects: sdk.EffectsReadExternal, Capabilities: []string{host}, …})
+// the handler answers {"choices": [{"value": "jev-latest", "label": "Jev (latest)"}, …]}
+```
+
+The operation must be one you describe (`aiisdk package` refuses
+another) and a read — the host never calls a write to draw a page. The
+answer is held to an enum's bounds (256 choices, unique values, labels
+of 64 bytes) and refused whole. The choices are an offer, not the rule:
+the operator's value is any string the setting admits, and a failed
+lookup leaves the text field with the reason.
 
 `aiisdk test` answers `settings.get` from your declaration: defaults,
 then `-setting key=value` for the run, then a case file's own

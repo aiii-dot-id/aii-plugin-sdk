@@ -60,6 +60,9 @@ const (
 var (
 	reSettingKey    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 	reSettingHandle = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+	// .
+	// .
+	reSettingOperation = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 )
 
 // .
@@ -85,6 +88,13 @@ type SettingDecl struct {
 	// .
 	// .
 	OAuth *SettingOAuthHint `json:"oauth,omitempty"`
+	// .
+	// .
+	// .
+	// .
+	// .
+	// .
+	ChoicesFrom string `json:"choices_from,omitempty"`
 }
 
 // .
@@ -155,6 +165,14 @@ func ValidateSettings(decls []SettingDecl) error {
 				if !reSettingKey.MatchString(svc) {
 					return fmt.Errorf("setting %q: oauth service %q is not a name", d.Key, svc)
 				}
+			}
+		}
+		if d.ChoicesFrom != "" {
+			if d.Type != SettingString {
+				return fmt.Errorf("setting %q: choices_from belongs to a string (an enum's choices are its own)", d.Key)
+			}
+			if !reSettingOperation.MatchString(d.ChoicesFrom) {
+				return fmt.Errorf("setting %q: choices_from %q is not an operation name", d.Key, d.ChoicesFrom)
 			}
 		}
 		if d.Type == SettingEnum {
@@ -358,4 +376,20 @@ func SettingsJSON(decls []SettingDecl) ([]byte, error) {
 		list = append(list, entry)
 	}
 	return marshalCanonical(list)
+}
+
+// .
+// .
+// .
+func CheckSettingOperations(decls []SettingDecl, operations []string) error {
+	known := map[string]bool{}
+	for _, op := range operations {
+		known[op] = true
+	}
+	for _, d := range decls {
+		if d.ChoicesFrom != "" && !known[d.ChoicesFrom] {
+			return fmt.Errorf("setting %q: choices_from %q is not an operation this plugin describes", d.Key, d.ChoicesFrom)
+		}
+	}
+	return nil
 }
