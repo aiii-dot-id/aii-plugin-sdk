@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "time_zone": {
+      "type": "string",
+      "description": "the calendar's time zone; every time here is in it"
+    },
+    "from": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    },
+    "minutes": {
+      "type": "integer"
+    },
+    "free": {
+      "type": "array",
+      "description": "the stretches of at least minutes that no event on this calendar holds, in order",
+      "items": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "minutes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "minutes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "true when the calendar held more events than one answer reads; more says from when to ask again"
+    },
+    "more": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "string",
+      "description": "what the answer covers: this calendar alone — never another person's time, or whether anyone would accept"
+    }
+  },
+  "required": [
+    "time_zone",
+    "from",
+    "to",
+    "minutes",
+    "free",
+    "truncated",
+    "scope"
+  ],
+  "additionalProperties": false
+}

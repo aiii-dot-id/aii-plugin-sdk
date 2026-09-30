@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 254
+      },
+      "description": "the recipients: each one plain email address, name@example.com — no display name"
+    },
+    "cc": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 254
+      },
+      "description": "the recipients it is copied to, the same way; there is no bcc: every recipient is shown"
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 250,
+      "description": "the subject, one line; a reply keeps the subject of the message it answers, \"Re: \" or not"
+    },
+    "body": {
+      "type": "string",
+      "maxLength": 65536,
+      "description": "the text, plain, at most 64 KiB"
+    },
+    "in_reply_to": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "to reply: the id of the message this answers, as gmail.search gives it; the mail joins that message's thread"
+    }
+  },
+  "required": [
+    "to",
+    "subject",
+    "body"
+  ],
+  "additionalProperties": false
+}

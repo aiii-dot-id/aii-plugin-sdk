@@ -1,0 +1,147 @@
+{
+  "id": "com.aiii.examples.gmail",
+  "version": "0.1.0",
+  "aiios_min_version": "0.1.11",
+  "plugin_family": "channel_adapter",
+  "title": "gmail",
+  "description": "One Gmail mailbox through a connected account: search and read mail other people wrote, save a draft that reaches no one, send a mail once the operator confirms it — and the inbox as a channel: mail arrives by Google's push, is renewed and caught up on a schedule, and a contact is mailed without a card.",
+  "capability_envelope": [
+    "net.outbound:gmail.googleapis.com:443",
+    "ring4.kv",
+    "net.outbound:pubsub.googleapis.com:443"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:gmail.googleapis.com:443",
+        "ring4.kv",
+        "net.outbound:pubsub.googleapis.com:443"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:gmail.googleapis.com:443",
+        "ring4.kv",
+        "net.outbound:pubsub.googleapis.com:443"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:gmail.googleapis.com:443",
+        "ring4.kv",
+        "net.outbound:pubsub.googleapis.com:443"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "google",
+      "type": "secret",
+      "title": "Google account",
+      "description": "a Google account connected on the Plugins page with the gmail service (modify to draft and send); add pubsub and gmail.setup can make the Pub/Sub topic and subscription",
+      "required": true,
+      "oauth": {
+        "provider": "google",
+        "services": [
+          "gmail"
+        ]
+      }
+    },
+    {
+      "key": "topic",
+      "type": "string",
+      "title": "Pub/Sub topic",
+      "description": "the Pub/Sub topic Gmail publishes to, projects/<project>/topics/<topic>; gmail.setup creates it, or grant publish to gmail-api-push@system.gserviceaccount.com yourself"
+    },
+    {
+      "key": "push_account",
+      "type": "string",
+      "title": "Pub/Sub push service account",
+      "description": "the push service account's email: its OIDC token is what the host accepts. Make it once in the console; the Pub/Sub service agent needs Token Creator on it"
+    },
+    {
+      "key": "send_limit",
+      "type": "integer",
+      "title": "Sends allowed per window",
+      "description": "the most messages this channel sends in any one window — a bound on what a runaway identity can send; a send over it is refused, saying when the next can go",
+      "default": 20,
+      "minimum": 1,
+      "maximum": 1000
+    },
+    {
+      "key": "send_window_minutes",
+      "type": "integer",
+      "title": "Window, in minutes",
+      "description": "the length of the window the send limit is counted over",
+      "default": 60,
+      "minimum": 1,
+      "maximum": 1440
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "aii.channel",
+      "version": 1,
+      "methods": [
+        "describe",
+        "send",
+        "receive"
+      ]
+    },
+    {
+      "id": "tools.provider",
+      "version": 1,
+      "methods": [
+        "gmail.search",
+        "gmail.read",
+        "gmail.draft",
+        "gmail.send",
+        "gmail.notify",
+        "gmail.renew",
+        "gmail.sync",
+        "gmail.setup"
+      ]
+    }
+  ],
+  "webhooks": [
+    {
+      "path": "notify",
+      "operation": "gmail.notify",
+      "signature": {
+        "scheme": "google-oidc",
+        "header": "Authorization",
+        "prefix": "Bearer ",
+        "email_setting": "push_account"
+      },
+      "max_body_bytes": 16384
+    }
+  ],
+  "schedule": [
+    {
+      "operation": "gmail.renew",
+      "every_seconds": 86400
+    },
+    {
+      "operation": "gmail.sync",
+      "every_seconds": 1800
+    }
+  ]
+}

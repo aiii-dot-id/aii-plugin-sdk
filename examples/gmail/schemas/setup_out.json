@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "description": "the address the push subscription delivers to: this identity's public webhook"
+    },
+    "topic": {
+      "type": "string",
+      "enum": [
+        "created",
+        "already there"
+      ]
+    },
+    "publisher": {
+      "type": "string",
+      "enum": [
+        "granted",
+        "already granted"
+      ]
+    },
+    "subscription": {
+      "type": "string",
+      "enum": [
+        "created",
+        "already set up",
+        "updated"
+      ]
+    },
+    "subscription_name": {
+      "type": "string"
+    },
+    "watch_expires": {
+      "type": "string",
+      "description": "when the watch lapses, in milliseconds since the epoch, as Gmail says it"
+    }
+  },
+  "required": [
+    "endpoint",
+    "topic",
+    "publisher",
+    "subscription",
+    "subscription_name",
+    "watch_expires"
+  ],
+  "additionalProperties": false
+}

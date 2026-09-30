@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "number": {
+      "type": "integer"
+    },
+    "html_url": {
+      "type": "string"
+    },
+    "effect": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "number"
+  ],
+  "additionalProperties": false
+}

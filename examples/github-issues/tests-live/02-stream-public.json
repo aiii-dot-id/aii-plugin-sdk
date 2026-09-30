@@ -1,0 +1,14 @@
+{
+  "name": "the public issues of golang/go arrive as a stream",
+  "operation": "issues.stream",
+  "arguments": {
+    "limit": 2
+  },
+  "settings": {
+    "repo": "golang/go"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"chunks\":"
+  }
+}

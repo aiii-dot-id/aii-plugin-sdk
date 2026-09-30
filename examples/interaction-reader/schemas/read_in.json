@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "incarnation": {
+      "type": "string"
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "length": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16384
+    }
+  },
+  "required": [
+    "id",
+    "incarnation",
+    "sha256"
+  ],
+  "additionalProperties": false
+}

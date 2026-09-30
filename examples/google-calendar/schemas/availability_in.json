@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?$",
+      "description": "where the window starts: a local date and time in the calendar's own time zone, such as 2026-10-02T09:00"
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?$",
+      "description": "where it ends, the same way; at most 14 days after from"
+    },
+    "minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440,
+      "description": "the shortest free time worth naming, in minutes"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "minutes"
+  ],
+  "additionalProperties": false
+}

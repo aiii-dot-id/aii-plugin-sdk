@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "expiration": {
+      "type": "string",
+      "description": "when this watch lapses, in milliseconds since the epoch, as Gmail says it"
+    }
+  },
+  "additionalProperties": false
+}

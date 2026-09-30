@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^m:[0-9]+$"
+    },
+    "words": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "scope": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "words"
+  ]
+}

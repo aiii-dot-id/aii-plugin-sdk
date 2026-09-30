@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "channel": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+    },
+    "receive": {
+      "type": "string",
+      "enum": [
+        "poll",
+        "webhook"
+      ]
+    },
+    "budget_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60,
+      "description": "how long receive may block; 0 = the host's default of ten seconds"
+    },
+    "acknowledges": {
+      "type": "boolean",
+      "description": "true: receive is handed `recorded`, the ids of the last answer's arrivals the host holds, and the adapter moves its position on only through them"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "additionalProperties": false
+}

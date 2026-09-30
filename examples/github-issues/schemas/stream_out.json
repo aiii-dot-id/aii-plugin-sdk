@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "http_status": {
+      "type": "integer"
+    },
+    "bytes": {
+      "type": "integer"
+    },
+    "chunks": {
+      "type": "integer"
+    },
+    "content_type": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "http_status",
+    "bytes",
+    "chunks"
+  ],
+  "additionalProperties": false
+}

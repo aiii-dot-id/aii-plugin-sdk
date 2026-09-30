@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

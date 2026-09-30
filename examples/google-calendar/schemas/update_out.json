@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "updated"
+      ]
+    },
+    "etag": {
+      "type": "string",
+      "description": "the event's new version"
+    },
+    "changed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "the fields this call set; Google kept every other"
+    },
+    "notifications": {
+      "type": "string",
+      "description": "what Google was asked to email"
+    }
+  },
+  "required": [
+    "event_id",
+    "outcome",
+    "etag",
+    "changed",
+    "notifications"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "how many events; five when not named"
+    },
+    "page": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "the next_page an earlier answer gave, to read on from where it stopped"
+    }
+  },
+  "additionalProperties": false
+}

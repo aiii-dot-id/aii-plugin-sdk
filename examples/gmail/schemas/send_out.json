@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "sent"
+      ],
+      "description": "sent: Gmail took this mail for sending — by its answer, or, when the answer was lost, because Gmail no longer holds the draft the send was made from"
+    },
+    "message_id": {
+      "type": "string",
+      "description": "the sent message's id in Gmail; empty when Gmail's answer to the send was lost and the draft's absence is all that shows it left"
+    },
+    "thread_id": {
+      "type": "string"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "its labels as Gmail holds them: SENT once it is sent"
+    },
+    "message_id_header": {
+      "type": "string",
+      "description": "the Message-ID Gmail wrote for it, as read back"
+    },
+    "confirmed": {
+      "type": "boolean",
+      "description": "whether a read shows it in Sent; false when that read failed, which proves nothing either way"
+    },
+    "confirmation": {
+      "type": "string",
+      "description": "what the reads showed, or why they could not"
+    },
+    "delivery": {
+      "type": "string",
+      "description": "what the receipt does not say: that anyone received, read or accepted the mail"
+    }
+  },
+  "required": [
+    "outcome",
+    "message_id",
+    "thread_id",
+    "labels",
+    "confirmed",
+    "confirmation",
+    "delivery"
+  ],
+  "additionalProperties": false
+}
