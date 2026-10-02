@@ -253,6 +253,12 @@ func (c *AuthorConfig) Validate() error {
 			return err
 		}
 	}
+	if err := ValidateRuntimeExtent(c.Runtimes, c.AiiosMinVersion); err != nil {
+		return fmt.Errorf("runtimes: %v", err)
+	}
+	if err := requireRuntimeExtent(c.Runtimes, c.AiiosMinVersion); err != nil {
+		return fmt.Errorf("runtimes: %v", err)
+	}
 	if err := ValidateSettings(c.Settings); err != nil {
 		return fmt.Errorf("settings: %v", err)
 	}

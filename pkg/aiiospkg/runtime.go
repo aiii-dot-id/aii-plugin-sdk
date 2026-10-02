@@ -83,7 +83,14 @@ type RuntimeDecl struct {
 	InstalledBytes  int64  `json:"installed_bytes"`
 	Files           int    `json:"files"`
 	InventorySHA256 string `json:"inventory_sha256"`
+
+	LargestFileBytes *int64 `json:"largest_file_bytes,omitempty"`
+	Depth            *int   `json:"depth,omitempty"`
 }
+
+const RuntimeExtentMinHost = "0.1.14"
+
+const maxRuntimeDepth = (maxTreePathBytes - 1) / 2
 
 func ValidateRuntimes(decls []RuntimeDecl, variants []AuthorVariant) error {
 	if len(decls) > MaxRuntimes {
@@ -111,20 +118,74 @@ func ValidateRuntimes(decls []RuntimeDecl, variants []AuthorVariant) error {
 		if d.Size <= 0 || d.InstalledBytes <= 0 || d.Files <= 0 {
 			return fmt.Errorf("runtime %d: size, installed_bytes and files are positive", i)
 		}
+		if err := validExtent(d); err != nil {
+			return fmt.Errorf("runtime %d: %v", i, err)
+		}
 	}
 	return nil
 }
 
+func validExtent(d RuntimeDecl) error {
+	if (d.LargestFileBytes == nil) != (d.Depth == nil) {
+		return fmt.Errorf("largest_file_bytes and depth are declared together or not at all")
+	}
+	if d.LargestFileBytes == nil {
+		return nil
+	}
+	largest, depth := *d.LargestFileBytes, *d.Depth
+	mean := (d.InstalledBytes-1)/int64(d.Files) + 1
+	if largest <= 0 || largest > d.InstalledBytes || largest < mean {
+		return fmt.Errorf("largest_file_bytes %d is not the largest of %d files totalling %d bytes", largest, d.Files, d.InstalledBytes)
+	}
+	if depth < 1 || depth > maxRuntimeDepth {
+		return fmt.Errorf("depth %d is outside 1..%d", depth, maxRuntimeDepth)
+	}
+	return nil
+}
+
+func ValidateRuntimeExtent(decls []RuntimeDecl, minHost string) error {
+	for _, d := range decls {
+		if (d.LargestFileBytes != nil || d.Depth != nil) && !extentFloor(minHost) {
+			return fmt.Errorf("runtime %s declares largest_file_bytes and depth, which require aiios_min_version >= %s", d.VariantID, RuntimeExtentMinHost)
+		}
+	}
+	return nil
+}
+
+func requireRuntimeExtent(decls []RuntimeDecl, minHost string) error {
+	for _, d := range decls {
+		if d.LargestFileBytes == nil && d.Depth == nil && extentFloor(minHost) {
+			return fmt.Errorf("runtime %s: aiios_min_version %s reads a runtime's extent; declare largest_file_bytes and depth as aiisdk runtime-pack prints them", d.VariantID, minHost)
+		}
+	}
+	return nil
+}
+
+func extentFloor(minHost string) bool {
+	return ValidHostVersion(minHost) && CompareHostVersion(minHost, RuntimeExtentMinHost) >= 0
+}
+
 func DeclaredCeilings(d RuntimeDecl) map[string]int64 {
+	return ExceededCeilings(d, RuntimeLimits)
+}
+
+func ExceededCeilings(d RuntimeDecl, limits TreeLimits) map[string]int64 {
+	l := limits.filled()
 	req := map[string]int64{}
-	if d.InstalledBytes > RuntimeLimits.MaxInstalledBytes {
+	if d.InstalledBytes > l.MaxInstalledBytes {
 		req[CeilingInstalledBytes] = d.InstalledBytes
 	}
-	if d.Files > RuntimeLimits.MaxFiles {
+	if d.Files > l.MaxFiles {
 		req[CeilingFiles] = int64(d.Files)
 	}
-	if d.Size > RuntimeLimits.MaxCompressedBytes {
+	if d.Size > l.MaxCompressedBytes {
 		req[CeilingCompressedBytes] = d.Size
+	}
+	if d.LargestFileBytes != nil && *d.LargestFileBytes > l.MaxFileBytes {
+		req[CeilingFileBytes] = *d.LargestFileBytes
+	}
+	if d.Depth != nil && *d.Depth > l.MaxDepth {
+		req[CeilingDepth] = int64(*d.Depth)
 	}
 	return req
 }

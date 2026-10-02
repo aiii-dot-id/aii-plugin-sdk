@@ -32,7 +32,10 @@ defines, led by an inventory of every file (path, size, sha256, mode),
 directories before their children, bytewise order, exec bits kept.
 Symlinks are refused. Prints, as JSON, the numbers your plugin.json
 runtime declaration carries once the archive is published at its URL:
-sha256, size, installed_bytes, files, inventory_sha256.
+sha256, size, installed_bytes, files, inventory_sha256 — and, when your
+aiios_min_version is 0.1.14 or later, largest_file_bytes and depth, the
+archive's extent, which lets the host refuse a runtime the operator's
+ceilings cannot admit before downloading it.
 
 A tree past the host's default ceilings is refused unless you pass the
 budget it needs (-max-installed-bytes, -max-files, -max-file-bytes,

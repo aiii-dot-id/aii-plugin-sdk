@@ -47,6 +47,8 @@ type Session struct {
 	outClosed  bool
 	outChanged chan struct{}
 
+	queued, wrote uint64
+
 	closeOnce sync.Once
 	closed    chan struct{}
 
@@ -75,8 +77,11 @@ var errNotSent = errors.New("not sent")
 
 var errOutQueueFull = errors.New("outbound queue saturated")
 
+var ErrLaneEnded = errors.New("aiiosdk: the session lane ended")
+
 type outbound struct {
 	frame   []byte
+	seq     uint64
 	claimed atomic.Bool
 	done    chan error
 	release func()
@@ -368,10 +373,20 @@ func (s *Session) writeQueued(ob *outbound) {
 		ob.release()
 	}
 	s.outMu.Lock()
+	s.announceLocked()
+	s.outMu.Unlock()
+	owedNothing := s.write(ob)
+	s.outMu.Lock()
+	if owedNothing && s.wrote+1 == ob.seq {
+		s.wrote = ob.seq
+	}
+	s.announceLocked()
+	s.outMu.Unlock()
+}
+
+func (s *Session) announceLocked() {
 	close(s.outChanged)
 	s.outChanged = make(chan struct{})
-	s.outMu.Unlock()
-	s.write(ob)
 }
 
 func (s *Session) tryEnqueue(ob *outbound, admission bool) (<-chan struct{}, error) {
@@ -390,28 +405,31 @@ func (s *Session) tryEnqueue(ob *outbound, admission bool) (<-chan struct{}, err
 			return s.outChanged, errOutQueueFull
 		}
 	}
+	ob.seq = s.queued + 1
 	select {
 	case s.outQ <- ob:
+		s.queued = ob.seq
 		return nil, nil
 	default:
 		return s.outChanged, errOutQueueFull
 	}
 }
 
-func (s *Session) write(ob *outbound) {
+func (s *Session) write(ob *outbound) bool {
 	if !ob.claimed.CompareAndSwap(false, true) {
-		return
+		return true
 	}
 	if s.faultErr() != nil {
 		ob.done <- errNotSent
-		return
+		return false
 	}
 	if err := WriteFrame(s.out, ob.frame, MaxControlFrameBytes); err != nil {
 		s.setFault(fmt.Errorf("aiiosdk: transport write failed: %w", err))
 		ob.done <- err
-		return
+		return false
 	}
 	ob.done <- nil
+	return true
 }
 
 func (s *Session) enqueue(ctx context.Context, frame []byte) (*outbound, error) {
@@ -449,6 +467,37 @@ func (s *Session) Emit(event any) error {
 		return fmt.Errorf("aiiosdk: event not sent: the lane has ended")
 	}
 	return nil
+}
+
+func (s *Session) Flush(ctx context.Context) error {
+	s.outMu.Lock()
+	target := s.queued
+	s.outMu.Unlock()
+	for {
+
+		s.outMu.Lock()
+		wrote := s.wrote
+		if wrote >= target {
+			s.outMu.Unlock()
+			return nil
+		}
+		changed := s.outChanged
+		s.outMu.Unlock()
+		if err := s.faultErr(); err != nil {
+			return fmt.Errorf("%w: %d accepted frame(s) not confirmed written: %w", ErrLaneEnded, target-wrote, err)
+		}
+		select {
+		case <-s.closed:
+			return fmt.Errorf("%w: %d accepted frame(s) not confirmed written", ErrLaneEnded, target-wrote)
+		default:
+		}
+		select {
+		case <-changed:
+		case <-s.closed:
+		case <-ctx.Done():
+			return fmt.Errorf("aiiosdk: flush outcome unknown: %d accepted frame(s) not yet written: %w", target-wrote, ctx.Err())
+		}
+	}
 }
 
 func (s *Session) HostCall(ctx context.Context, operation string, args any) (Object, error) {
