@@ -54,6 +54,50 @@ type ModelDecl struct {
 	URL    string `json:"url"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
+
+	When *ModelWhen `json:"when,omitempty"`
+}
+
+type ModelWhen struct {
+	Setting string   `json:"setting"`
+	Values  []string `json:"values"`
+}
+
+const ModelWhenMinHost = "0.1.15"
+
+const MaxModelWhenValues = 64
+
+func ValidateModelConditions(decls []ModelDecl, settings []SettingDecl, minHost string) error {
+	byKey := map[string]SettingDecl{}
+	for _, s := range settings {
+		byKey[s.Key] = s
+	}
+	for _, d := range decls {
+		w := d.When
+		if w == nil {
+			continue
+		}
+		if !ValidHostVersion(minHost) || CompareHostVersion(minHost, ModelWhenMinHost) < 0 {
+			return fmt.Errorf("model %q is needed only for some values of a setting, which requires aiios_min_version >= %s", d.Name, ModelWhenMinHost)
+		}
+		s, declared := byKey[w.Setting]
+		if !declared {
+			return fmt.Errorf("model %q: when.setting %q is not a setting this package declares", d.Name, w.Setting)
+		}
+		if s.Type != SettingEnum {
+			return fmt.Errorf("model %q: when.setting %q is a %s setting; a model can be conditional on an enum alone", d.Name, w.Setting, s.Type)
+		}
+		values := map[string]bool{}
+		for _, v := range s.Values {
+			values[v] = true
+		}
+		for _, v := range w.Values {
+			if !values[v] {
+				return fmt.Errorf("model %q: when.values names %q, which is not a value of setting %q", d.Name, v, w.Setting)
+			}
+		}
+	}
+	return nil
 }
 
 func (d ModelDecl) Dest() string {
@@ -162,6 +206,22 @@ func ValidateModels(decls []ModelDecl) error {
 		if d.Size <= 0 || d.Size > MaxModelBytes {
 			return fmt.Errorf("model %q: size must be 1..%d bytes", d.Name, int64(MaxModelBytes))
 		}
+		if w := d.When; w != nil {
+
+			if !reSettingKey.MatchString(w.Setting) {
+				return fmt.Errorf("model %q: when.setting %q is not a setting key", d.Name, w.Setting)
+			}
+			if len(w.Values) == 0 || len(w.Values) > MaxModelWhenValues {
+				return fmt.Errorf("model %q: when.values must name 1..%d values", d.Name, MaxModelWhenValues)
+			}
+			named := map[string]bool{}
+			for _, v := range w.Values {
+				if v == "" || named[v] {
+					return fmt.Errorf("model %q: when.values names %q twice or names nothing", d.Name, v)
+				}
+				named[v] = true
+			}
+		}
 	}
 
 	for a, da := range dests {
@@ -215,6 +275,9 @@ func ModelsJSON(decls []ModelDecl) ([]byte, error) {
 		entry := map[string]interface{}{"name": d.Name, "url": d.URL, "sha256": d.SHA256, "size": d.Size}
 		if d.Path != "" {
 			entry["path"] = d.Path
+		}
+		if d.When != nil {
+			entry["when"] = map[string]interface{}{"setting": d.When.Setting, "values": stringList(d.When.Values)}
 		}
 		list = append(list, entry)
 	}

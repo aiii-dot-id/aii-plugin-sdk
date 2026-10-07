@@ -13,6 +13,9 @@
     },
     "chunk_chars": {
       "type": "integer"
+    },
+    "removed": {
+      "type": "integer"
     }
   },
   "required": [

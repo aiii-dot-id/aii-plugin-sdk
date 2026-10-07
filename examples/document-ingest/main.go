@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	sdk "github.com/aiii-dot-id/aii-plugin-sdk/pkg/aiiosdk"
 )
@@ -73,28 +74,75 @@ func ingest(c sdk.Call) (any, error) {
 		return failure(err)
 	}
 	size := chunkSize()
-	var chunks []string
-	for start := 0; start < len(text); start += size {
-		end := start + size
-		if end > len(text) {
-			end = len(text)
-		}
-		chunks = append(chunks, string(text[start:end]))
-	}
+	chunks := chunksOf(text, size)
 	stored := 0
 	for i, ch := range chunks {
-		key := fmt.Sprintf("%s%s:%d", prefix, path, i)
-		if _, err := sdk.KV.Put(key, ch); err != nil {
+		if _, err := sdk.KV.Put(chunkKey(path, i), ch); err != nil {
 			return failure(err)
 		}
 		stored++
+	}
+
+	removed, err := removeStale(sdk.KV, path, len(chunks))
+	if err != nil {
+		return failure(err)
 	}
 
 	line := fmt.Sprintf("%s\t%d chunks\t%d bytes\n", path, stored, len(text))
 	if err := sdk.Files.Append(sdk.PrivateRoot, "index.tsv", []byte(line)); err != nil {
 		return failure(err)
 	}
-	return map[string]any{"path": path, "bytes": len(text), "chunks": stored, "chunk_chars": size}, nil
+	return map[string]any{"path": path, "bytes": len(text), "chunks": stored, "chunk_chars": size, "removed": removed}, nil
+}
+
+func chunkKey(path string, i int) string { return fmt.Sprintf("%s%s:%d", prefix, path, i) }
+
+type chunkStore interface {
+	Get(key string) (string, bool, error)
+	Delete(key string) (bool, error)
+}
+
+func removeStale(store chunkStore, path string, kept int) (int, error) {
+	end := kept
+	for {
+		_, present, err := store.Get(chunkKey(path, end))
+		if err != nil {
+			return 0, err
+		}
+		if !present {
+			break
+		}
+		end++
+	}
+	removed := 0
+	for i := end - 1; i >= kept; i-- {
+		deleted, err := store.Delete(chunkKey(path, i))
+		if err != nil {
+			return removed, err
+		}
+		if deleted {
+			removed++
+		}
+	}
+	return removed, nil
+}
+
+func chunksOf(text []byte, size int) []string {
+	var out []string
+	start, n := 0, 0
+	for i := 0; i < len(text); {
+		_, w := utf8.DecodeRune(text[i:])
+		i += w
+		n++
+		if n == size {
+			out = append(out, string(text[start:i]))
+			start, n = i, 0
+		}
+	}
+	if start < len(text) {
+		out = append(out, string(text[start:]))
+	}
+	return out
 }
 
 func recall(c sdk.Call) (any, error) {

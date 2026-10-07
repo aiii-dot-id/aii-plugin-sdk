@@ -142,6 +142,14 @@ plugin (unsigned — trust tier T0):
 		install[aiiospkg.ModelsFile] = models
 	}
 
+	if cfg.EmbeddingsFile != "" {
+		raw, err := packEmbeddings(dir, cfg, methods, descriptors)
+		if err != nil {
+			return fail("embeddings: %v", err)
+		}
+		install[aiiospkg.EmbeddingsFile] = raw
+	}
+
 	if len(cfg.Runtimes) > 0 {
 		if err := aiiospkg.ValidateRuntimes(cfg.Runtimes, cfg.Variants); err != nil {
 			return fail("runtimes: %v", err)
@@ -410,4 +418,22 @@ func resolveContained(root, rel, kind string) (string, error) {
 		return "", fmt.Errorf("%s %q is not a regular file", kind, rel)
 	}
 	return path, nil
+}
+
+func packEmbeddings(dir string, cfg *aiiospkg.AuthorConfig, methods []string, descriptors []byte) ([]byte, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, cfg.EmbeddingsFile))
+	if err != nil {
+		return nil, err
+	}
+	decl, err := aiiospkg.ParseEmbeddings(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", cfg.EmbeddingsFile, err)
+	}
+	if err := aiiospkg.ValidateEmbeddingsPackage(cfg, decl, methods); err != nil {
+		return nil, err
+	}
+	if err := aiiospkg.ValidateEmbeddingsDescriptors(descriptors); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }

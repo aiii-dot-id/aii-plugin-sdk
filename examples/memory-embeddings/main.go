@@ -66,7 +66,7 @@ func remember(c sdk.Call) (any, error) {
 		return denial(err)
 	}
 	key := prefix + strconv.Itoa(seq)
-	res, err := sdk.KV.Put(key, string(record(text, emb.Vectors[0])))
+	res, err := sdk.KV.Put(key, string(record(text, emb.Model, emb.Vectors[0])))
 	if err != nil {
 		return denial(err)
 	}
@@ -108,7 +108,7 @@ func recall(c sdk.Call) (any, error) {
 		score    float64
 	}
 	var found []match
-	scanned := 0
+	scanned, otherModel := 0, 0
 	for _, key := range keys {
 		if key == seqKey {
 			continue
@@ -123,6 +123,11 @@ func recall(c sdk.Call) (any, error) {
 		scanned++
 		rec := sdk.Object([]byte(value))
 		text, _ := rec.String("text")
+
+		if model, _ := rec.String("model"); model != emb.Model {
+			otherModel++
+			continue
+		}
 		v, ok := rec.FloatArray("v")
 		if !ok {
 			continue
@@ -137,7 +142,7 @@ func recall(c sdk.Call) (any, error) {
 	for _, m := range found {
 		matches = append(matches, map[string]any{"id": m.id, "text": m.text, "score": m.score})
 	}
-	return map[string]any{"matches": matches, "scanned": scanned, "limit": k, "model": emb.Model}, nil
+	return map[string]any{"matches": matches, "scanned": scanned, "skipped_other_model": otherModel, "limit": k, "model": emb.Model}, nil
 }
 
 func forget(c sdk.Call) (any, error) {
@@ -164,8 +169,10 @@ func nextSeq() (int, error) {
 	return seq + 1, nil
 }
 
-func record(text string, v []float32) []byte {
+func record(text, model string, v []float32) []byte {
 	out := append([]byte(`{"text":`), jsonString(text)...)
+	out = append(out, `,"model":`...)
+	out = append(out, jsonString(model)...)
 	out = append(out, `,"v":[`...)
 	for i, f := range v {
 		if i > 0 {

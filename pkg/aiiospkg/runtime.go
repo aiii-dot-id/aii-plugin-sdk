@@ -217,6 +217,21 @@ type RuntimeArchive struct {
 
 	LargestFileBytes int64
 	Depth            int
+
+	Directories int
+}
+
+func memberAllowance(maxFiles int) int { return maxFiles + maxFiles/4 }
+
+func leastFilesCeiling(files, dirs int) int {
+	m := files
+	if least := (files + dirs) * 4 / 5; least > m {
+		m = least
+	}
+	for memberAllowance(m) < files+dirs {
+		m++
+	}
+	return m
 }
 
 func (a *RuntimeArchive) RequiredCeilings() map[string]int64 {
@@ -225,8 +240,8 @@ func (a *RuntimeArchive) RequiredCeilings() map[string]int64 {
 	if a.InstalledBytes > d.MaxInstalledBytes {
 		req[CeilingInstalledBytes] = a.InstalledBytes
 	}
-	if a.Files > d.MaxFiles {
-		req[CeilingFiles] = int64(a.Files)
+	if need := leastFilesCeiling(a.Files, a.Directories); need > d.MaxFiles {
+		req[CeilingFiles] = int64(need)
 	}
 	if a.LargestFileBytes > d.MaxFileBytes {
 		req[CeilingFileBytes] = a.LargestFileBytes
@@ -349,6 +364,42 @@ func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*Runtim
 	if len(files) > budget.MaxFiles {
 		return nil, fmt.Errorf("%d files exceed the budget of %d (-max-files); a tree past the host's defaults needs the operator's ceilings, which the report names", len(files), budget.MaxFiles)
 	}
+
+	var dirs []string
+	seenDir := map[string]bool{}
+	for _, f := range files {
+		parts := strings.Split(f.rel, "/")
+		for j := 1; j < len(parts); j++ {
+			d := strings.Join(parts[:j], "/")
+			if !seenDir[d] {
+				seenDir[d] = true
+				dirs = append(dirs, d)
+			}
+		}
+	}
+
+	if n := len(files) + len(dirs); n > memberAllowance(budget.MaxFiles) {
+		return nil, fmt.Errorf("%d files in %d directories are %d archive members beside the root and the inventory; the budget of %d files (-max-files) admits %d, and the least that admits this tree is %d", len(files), len(dirs), n, budget.MaxFiles, memberAllowance(budget.MaxFiles), leastFilesCeiling(len(files), len(dirs)))
+	}
+
+	paths := make([]string, 0, len(files)+len(dirs))
+	paths = append(paths, dirs...)
+	for _, f := range files {
+		paths = append(paths, f.rel)
+	}
+	sort.Strings(paths)
+
+	if seenDir[InventoryFile] {
+		return nil, fmt.Errorf("%s is the archive's own member, written beside the tree's top-level names; the tree must not carry a directory of that name", InventoryFile)
+	}
+	for _, p := range paths {
+		if !strings.Contains(p, "/") && casefoldSiblingCollision(p, InventoryFile) {
+			return nil, fmt.Errorf("%s differs only in letter case from %s, the archive's own member, written beside the tree's top-level names; a filesystem that folds case would merge them, so the host refuses the archive", p, InventoryFile)
+		}
+	}
+	if a, b, collide := casefoldSiblings(paths); collide {
+		return nil, fmt.Errorf("%s and %s differ only in letter case; a filesystem that folds case would merge them, so the host refuses the archive", a, b)
+	}
 	if total > budget.MaxInstalledBytes {
 		return nil, fmt.Errorf("%d installed bytes exceed the budget of %d (-max-installed-bytes); a tree past the host's defaults needs the operator's ceilings, which the report names", total, budget.MaxInstalledBytes)
 	}
@@ -371,18 +422,11 @@ func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*Runtim
 	}
 	members := []member{{path: root, isDir: true}, {path: root + "/" + InventoryFile}}
 	var rest []member
-	seenDir := map[string]bool{}
+	for _, d := range dirs {
+		rest = append(rest, member{path: root + "/" + d, isDir: true})
+	}
 	for i := range files {
-		f := &files[i]
-		parts := strings.Split(f.rel, "/")
-		for j := 1; j < len(parts); j++ {
-			d := strings.Join(parts[:j], "/")
-			if !seenDir[d] {
-				seenDir[d] = true
-				rest = append(rest, member{path: root + "/" + d, isDir: true})
-			}
-		}
-		rest = append(rest, member{path: root + "/" + f.rel, src: f})
+		rest = append(rest, member{path: root + "/" + files[i].rel, src: &files[i]})
 	}
 	sort.Slice(rest, func(i, j int) bool { return rest[i].path < rest[j].path })
 	members = append(members, rest...)
@@ -452,7 +496,25 @@ func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*Runtim
 	return &RuntimeArchive{
 		SHA256: hex.EncodeToString(hw.Sum(nil)), Size: cw.n, InstalledBytes: total, Files: len(files),
 		InventorySHA256: hex.EncodeToString(invSum[:]), LargestFileBytes: largest, Depth: depth,
+		Directories: len(dirs),
 	}, nil
+}
+
+func casefoldSiblings(paths []string) (first, second string, collide bool) {
+	seen := make(map[string]string, len(paths))
+	for _, p := range paths {
+		cut := strings.LastIndexByte(p, '/') + 1
+		name := []byte(p[cut:])
+		for i := range name {
+			name[i] = asciiLower(name[i])
+		}
+		key := p[:cut] + string(name)
+		if other, ok := seen[key]; ok && other != p {
+			return other, p, true
+		}
+		seen[key] = p
+	}
+	return "", "", false
 }
 
 type countingWriter struct {

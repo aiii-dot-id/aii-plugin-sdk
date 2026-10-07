@@ -53,6 +53,8 @@ type AuthorConfig struct {
 	Models []ModelDecl `json:"models,omitempty"`
 
 	Runtimes []RuntimeDecl `json:"runtimes,omitempty"`
+
+	EmbeddingsFile string `json:"embeddings_file,omitempty"`
 }
 
 type AuthorInterface struct {
@@ -216,6 +218,9 @@ func (c *AuthorConfig) Validate() error {
 	if err := validateAuthorRequirements(c.Requirements, "requirements"); err != nil {
 		return err
 	}
+	if err := c.validateEmbeddingsSource(); err != nil {
+		return err
+	}
 	if len(c.Variants) == 0 {
 		return fmt.Errorf("at least one variant is required (T0-T2 releases need a WASM baseline variant)")
 	}
@@ -274,9 +279,14 @@ func (c *AuthorConfig) Validate() error {
 	if err := ValidateModels(c.Models); err != nil {
 		return fmt.Errorf("models: %v", err)
 	}
+	if err := ValidateModelConditions(c.Models, c.Settings, c.AiiosMinVersion); err != nil {
+		return fmt.Errorf("models: %v", err)
+	}
 	knownModels := map[string]bool{}
+	conditionalModels := map[string]bool{}
 	for _, m := range c.Models {
 		knownModels[m.Name] = true
+		conditionalModels[m.Name] = m.When != nil
 	}
 	for i := range c.Variants {
 		v := &c.Variants[i]
@@ -309,6 +319,9 @@ func (c *AuthorConfig) Validate() error {
 		for _, name := range v.Accelerator.Models {
 			if !knownModels[name] {
 				return fmt.Errorf("variant %s: accelerator names model %q, which models does not declare", v.VariantID, name)
+			}
+			if conditionalModels[name] {
+				return fmt.Errorf("variant %s: accelerator names model %q, which is needed only for some values of a setting: a profile names what its platform always needs", v.VariantID, name)
 			}
 		}
 	}

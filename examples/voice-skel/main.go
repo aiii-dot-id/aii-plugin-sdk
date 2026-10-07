@@ -26,7 +26,8 @@ type generation struct {
 	stream uint32
 	seq    uint32
 	out    atomic.Int64
-	ended  bool
+
+	ended atomic.Bool
 }
 
 type engine struct {
@@ -70,20 +71,24 @@ func newEngine() *engine {
 	return &engine{gens: map[string]bool{}, byID: map[string]*generation{}, inputState: "accepting", synthLen: 200 * time.Millisecond, rate: 16000, hasInput: true}
 }
 
-func (e *engine) emit(typ string, fields map[string]any) int64 {
+func (e *engine) emit(typ string, fields map[string]any, then ...func(seq int64)) int64 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.s == nil {
-		return 0
+	var seq int64
+	if e.s != nil {
+		e.seq++
+		e.events++
+		ev := map[string]any{"type": typ, "session_id": e.sessionID, "sequence": e.seq, "id": fmt.Sprintf("ev-%d", e.events)}
+		for k, v := range fields {
+			ev[k] = v
+		}
+		_ = e.s.Emit(ev)
+		seq = e.seq
 	}
-	e.seq++
-	e.events++
-	ev := map[string]any{"type": typ, "session_id": e.sessionID, "sequence": e.seq, "id": fmt.Sprintf("ev-%d", e.events)}
-	for k, v := range fields {
-		ev[k] = v
+	for _, f := range then {
+		f(seq)
 	}
-	_ = e.s.Emit(ev)
-	return e.seq
+	return seq
 }
 
 func (e *engine) admit(c *aiiosdk.Control) {
@@ -310,7 +315,7 @@ func (e *engine) cancel(args aiiosdk.Object) (any, error) {
 	resolved := e.synth == nil || e.synth.id != sid
 	if !resolved {
 		e.synth.cancelled = true
-	} else if g := e.byID[sid]; g != nil && !g.ended {
+	} else if g := e.byID[sid]; g != nil && !g.ended.Load() {
 
 		g.cancelled, resolved = true, false
 	}
@@ -367,19 +372,27 @@ func (e *engine) finishInput(args aiiosdk.Object) (any, error) {
 	go func() {
 
 		time.Sleep(20 * time.Millisecond)
-		e.mu.Lock()
-		e.processedEnd, e.inputState = end, "finished"
-		e.mu.Unlock()
-		e.emit("transcript_final", map[string]any{"stream_id": stream, "end_sample": end, "text": "(the tail, finalized)", "speaker": "speaker-1"})
-
-		done := map[string]any{"stream_id": stream, "end_sample": end, "processed_end_sample": end}
-		seq := e.emit("input_finished", done)
-		e.mu.Lock()
-		done["sequence"] = seq
-		e.completion = done
-		e.mu.Unlock()
+		e.finishTail(stream, end, e)
 	}()
 	return map[string]any{"stream_id": stream, "end_sample": end, "accepted": true}, nil
+}
+
+type wire interface {
+	emit(typ string, fields map[string]any, then ...func(seq int64)) int64
+}
+
+func (e *engine) finishTail(stream string, end int64, w wire) {
+	e.mu.Lock()
+	e.processedEnd = end
+	e.mu.Unlock()
+	w.emit("transcript_final", map[string]any{"stream_id": stream, "end_sample": end, "text": "(the tail, finalized)", "speaker": "speaker-1"})
+
+	done := map[string]any{"stream_id": stream, "end_sample": end, "processed_end_sample": end}
+
+	w.emit("input_finished", done, func(seq int64) {
+		done["sequence"] = seq
+		e.inputState, e.completion = "finished", done
+	})
 }
 
 func (e *engine) playbackReport(args aiiosdk.Object, answer func(any, error)) {
@@ -416,7 +429,7 @@ func (e *engine) playbackReport(args aiiosdk.Object, answer func(any, error)) {
 		return
 	}
 	fenced := g.stopped || g.cancelled
-	if *r.Terminal && !g.ended && !fenced {
+	if *r.Terminal && !g.ended.Load() && !fenced {
 		e.mu.Unlock()
 		answer(nil, fmt.Errorf("playback_report refused: output still live"))
 		return
@@ -478,7 +491,7 @@ func (e *engine) close(args aiiosdk.Object) (any, error) {
 			e.synth.cancelled, e.synth.stopped = true, true
 		}
 		for _, g := range e.byID {
-			if !g.ended {
+			if !g.ended.Load() {
 				g.cancelled, g.stopped = true, true
 			}
 		}
@@ -536,7 +549,7 @@ func (e *engine) close(args aiiosdk.Object) (any, error) {
 }
 
 func speak(pair *aiiosdk.AudioPair, g *generation, rate int) {
-	if pair == nil || g.ended {
+	if pair == nil || g.ended.Load() {
 		return
 	}
 	n := rate / 200
@@ -547,7 +560,7 @@ func speak(pair *aiiosdk.AudioPair, g *generation, rate int) {
 	}
 	g.seq++
 	if err := pair.Write(aiiosdk.AudioFrame{Kind: aiiosdk.AudioPCM, Stream: g.stream, Seq: g.seq, Start: g.out.Load(), PCM: pcm}); err != nil {
-		g.ended = true
+		g.ended.Store(true)
 		return
 	}
 	g.out.Add(int64(n))
@@ -555,13 +568,12 @@ func speak(pair *aiiosdk.AudioPair, g *generation, rate int) {
 
 func endStream(pair *aiiosdk.AudioPair, g *generation) {
 	if pair == nil {
-		g.ended = true
+		g.ended.Store(true)
 		return
 	}
-	if g.ended {
+	if !g.ended.CompareAndSwap(false, true) {
 		return
 	}
-	g.ended = true
 	g.seq++
 	_ = pair.Write(aiiosdk.AudioFrame{Kind: aiiosdk.AudioEnd, Stream: g.stream, Seq: g.seq, Start: g.out.Load()})
 }
@@ -609,7 +621,7 @@ func (e *engine) echoAudio(pair *aiiosdk.AudioPair) {
 		if announce != nil {
 			e.emit("synthesis_start", map[string]any{"synthesis_id": g.id, "output_stream": g.stream})
 		}
-		if g.ended {
+		if g.ended.Load() {
 			continue
 		}
 		if fenced {
@@ -631,7 +643,7 @@ func (e *engine) echoAudio(pair *aiiosdk.AudioPair) {
 		}
 		ended := fr.Kind == aiiosdk.AudioEnd
 		if ended {
-			g.ended = true
+			g.ended.Store(true)
 		}
 		cancelled := g.cancelled
 		e.mu.Unlock()

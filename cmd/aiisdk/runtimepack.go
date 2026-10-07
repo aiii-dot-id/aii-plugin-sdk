@@ -18,7 +18,7 @@ func cmdRuntimePack(args []string) int {
 	out := fs.String("o", "", "the archive to write (required)")
 	d := aiiospkg.RuntimeLimits
 	installed := fs.String("max-installed-bytes", "", fmt.Sprintf("budget for the installed tree (bytes, or with a K/M/G suffix); the host's default is %d", d.MaxInstalledBytes))
-	files := fs.Int("max-files", d.MaxFiles, "budget for the number of files")
+	files := fs.Int("max-files", d.MaxFiles, "budget for the number of files; the host admits a quarter as many directories again")
 	fileBytes := fs.String("max-file-bytes", "", fmt.Sprintf("budget for the largest file; the host's default is %d", d.MaxFileBytes))
 	compressed := fs.String("max-compressed-bytes", "", fmt.Sprintf("budget for the archive itself; the host's default is %d", d.MaxCompressedBytes))
 	depth := fs.Int("max-depth", d.MaxDepth, "budget for path depth in segments")
@@ -30,7 +30,9 @@ code; never model data — as the companion runtime archive the host
 installs beside your carrier: the canonical gzip tar the bundle format
 defines, led by an inventory of every file (path, size, sha256, mode),
 directories before their children, bytewise order, exec bits kept.
-Symlinks are refused. Prints, as JSON, the numbers your plugin.json
+Symlinks are refused, and so are two names in one directory that differ
+only in letter case: the host refuses an archive that carries them.
+Prints, as JSON, the numbers your plugin.json
 runtime declaration carries once the archive is published at its URL:
 sha256, size, installed_bytes, files, inventory_sha256 — and, when your
 aiios_min_version is 0.1.14 or later, largest_file_bytes and depth, the
@@ -39,7 +41,10 @@ ceilings cannot admit before downloading it.
 
 A tree past the host's default ceilings is refused unless you pass the
 budget it needs (-max-installed-bytes, -max-files, -max-file-bytes,
--max-compressed-bytes, -max-depth). The budget is your declared
+-max-compressed-bytes, -max-depth). The files budget covers the tree's
+directories too: the host admits the files and a quarter as many
+directories again, and a tree with more is refused here with the least
+-max-files that admits it. The budget is your declared
 requirement, never permission: the report then names, as
 requires_operator_ceilings, the settings the operator must raise on the
 host's Plugins page before the activation is admitted. State them in

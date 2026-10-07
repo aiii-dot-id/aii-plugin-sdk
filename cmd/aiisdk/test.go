@@ -36,6 +36,8 @@ type testCase struct {
 
 	Settings map[string]json.RawMessage `json:"settings"`
 
+	EmbeddingsModel string `json:"embeddings_model"`
+
 	OperatorAct bool `json:"operator_act"`
 
 	UnconfirmedByDesign *string `json:"unconfirmed_by_design"`
@@ -194,6 +196,8 @@ Case file shape:
   {"name": "…", "operation": "core.echo", "arguments": {…},
    "expect": {"status": "succeeded", "reason_code": "", "result_contains": "" | ["…", "…"]}}
   "operator_act": true stamps the arguments as a confirmed act's dispatch;
+  "embeddings_model": "<name>" has the embeddings stand-in answer as that
+  model for the case (what a plugin sees when the operator changes it);
   "unconfirmed_by_design": "<why>" marks an external write that no operator
   confirms on purpose.
 `)
@@ -348,7 +352,8 @@ func runCase(rep *report, h *harness, w *workerdrive.Worker, i int, path string,
 		return
 	}
 	h.caseSettings = caseSettings
-	defer func() { h.caseSettings = nil }()
+	h.caseEmbeddingsModel = c.EmbeddingsModel
+	defer func() { h.caseSettings, h.caseEmbeddingsModel = nil, "" }()
 	want := c.Expect.Status
 	if want == "" {
 		want = "succeeded"

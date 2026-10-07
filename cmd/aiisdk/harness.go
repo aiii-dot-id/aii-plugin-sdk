@@ -51,6 +51,8 @@ type harness struct {
 	runSettings  map[string]interface{}
 	caseSettings map[string]interface{}
 
+	caseEmbeddingsModel string
+
 	streams map[string]*harnessStream
 	streamN int
 
@@ -1006,8 +1008,12 @@ func (h *harness) answerEmbeddings(arguments json.RawMessage) (json.RawMessage, 
 		}
 		vectors[i] = harnessEmbed(s)
 	}
-	h.observe("embeddings.create -> %d vectors from the harness stand-in (hashed words, not a model)", len(vectors))
-	return succeeded(map[string]interface{}{"model": "harness-hashed-words-32", "dimensions": 32, "vectors": vectors}), nil
+	model := "harness-hashed-words-32"
+	if h.caseEmbeddingsModel != "" {
+		model = h.caseEmbeddingsModel
+	}
+	h.observe("embeddings.create -> %d vectors from the harness stand-in (hashed words, not a model), answering as %s", len(vectors), model)
+	return succeeded(map[string]interface{}{"model": model, "dimensions": 32, "vectors": vectors}), nil
 }
 
 func harnessEmbed(text string) []float32 {
