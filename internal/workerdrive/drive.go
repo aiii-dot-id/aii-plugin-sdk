@@ -35,7 +35,18 @@ func StartForward(workerBin string, prefix []string, module string, timeout time
 }
 
 func launch(workerBin string, args []string, timeout time.Duration, handler Handler) (*Worker, error) {
-	cmd := exec.Command(workerBin, args...)
+	return start(exec.Command(workerBin, args...), timeout, handler)
+}
+
+func StartNative(binary string, env []string, timeout time.Duration, handler Handler) (*Worker, error) {
+	cmd := exec.Command(binary)
+	cmd.Env = append([]string{}, env...)
+	return start(cmd, timeout, handler)
+}
+
+var ErrNoAnswer = errors.New("no answer within the call's deadline")
+
+func start(cmd *exec.Cmd, timeout time.Duration, handler Handler) (*Worker, error) {
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
@@ -49,12 +60,14 @@ func launch(workerBin string, args []string, timeout time.Duration, handler Hand
 		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start worker: %w", err)
+		return nil, fmt.Errorf("start %s: %w", cmd.Path, err)
 	}
 	w := &Worker{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &bytes.Buffer{}, handler: handler}
 
 	bannerCh := make(chan string, 1)
+	ended := make(chan struct{})
 	go func() {
+		defer close(ended)
 		sc := bufio.NewScanner(stderrPipe)
 		sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
 		for sc.Scan() {
@@ -72,11 +85,35 @@ func launch(workerBin string, args []string, timeout time.Duration, handler Hand
 	select {
 	case w.banner = <-bannerCh:
 		return w, nil
+	case <-ended:
+		select {
+		case w.banner = <-bannerCh:
+			return w, nil
+		default:
+		}
+		return nil, exitedBeforeReady(cmd, w.stderr.String())
 	case <-time.After(timeout):
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 		return nil, fmt.Errorf("no ready banner within %s; worker stderr:\n%s", timeout, w.stderr.String())
 	}
+}
+
+func exitedBeforeReady(cmd *exec.Cmd, stderr string) error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	var werr error
+	select {
+	case werr = <-done:
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		werr = <-done
+	}
+	status := "exit status 0"
+	if werr != nil {
+		status = werr.Error()
+	}
+	return fmt.Errorf("the worker exited before it was ready (%s); worker stderr:\n%s", status, stderr)
 }
 
 func (w *Worker) Banner() string { return w.banner }
@@ -144,7 +181,7 @@ func (w *Worker) readFrame(timeout time.Duration) ([]byte, error) {
 		}
 		return r.payload, nil
 	case <-time.After(timeout):
-		return nil, fmt.Errorf("no frame within %s (worker stderr:\n%s)", timeout, w.stderr.String())
+		return nil, fmt.Errorf("%w: no frame within %s (worker stderr:\n%s)", ErrNoAnswer, timeout, w.stderr.String())
 	}
 }
 

@@ -694,7 +694,7 @@ func main() {
 	p := aiiosdk.New("com.example.voice-skel").DeclareSession()
 	e := newEngine()
 
-	if err := p.ServeSession(e.admit); err != nil && !errors.Is(err, io.EOF) {
+	if err := p.ServeSessionReady("voice-skel", aiiosdk.ReadyReport{Accelerator: "cpu"}, e.admit); err != nil && !errors.Is(err, io.EOF) {
 		fmt.Fprintf(os.Stderr, "voice-skel: %v\n", err)
 		os.Exit(1)
 	}

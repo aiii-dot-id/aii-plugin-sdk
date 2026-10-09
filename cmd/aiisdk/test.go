@@ -163,6 +163,9 @@ func cmdTest(args []string) int {
 	timeout := fs.Duration("timeout", 30*time.Second, "deadline per call and per worker start")
 	skipBuild := fs.Bool("skip-build", false, "use dist/<id>.wasm as it is instead of running aiisdk build")
 	reportFlag := fs.String("report", "", "also write the qualification report as JSON (schema aiisdk.qual.v1) to this path")
+	native := fs.Bool("native", false, "run this machine's native variant (its carrier, as the host starts it) instead of the wasm module; the default when the plugin declares no wasm variant")
+	modelsDir := fs.String("models-dir", os.Getenv("AII_MODELS_DIR"), "for a native plugin: the directory holding its declared models, handed to it as AII_MODELS_DIR as the host does (default $AII_MODELS_DIR); nothing is fetched")
+	runtimeRoot := fs.String("runtime-root", os.Getenv("AII_RUNTIME_ROOT"), "for a native plugin: its installed runtime tree, handed to it as AII_RUNTIME_ROOT as the host does (default $AII_RUNTIME_ROOT); nothing is fetched")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `Usage: aiisdk test [-grant <g>]... [-cases dir] [-timeout d] [-skip-build]
 
@@ -170,6 +173,10 @@ Proves the plugin in the current directory on this machine:
 
   build      aiisdk build (TinyGo, the pinned recipe)
   package    aiisdk package (the canonical .aiiospkg)
+  artifact   the bytes the package carries for the wasm variant this run
+             reports on — its own artifact when it names one, else the
+             built module — held to the manifest's artifact_hash; every
+             step below runs these bytes
   verify     aii plugin verify, the host's own verifier
   account    the module's aiii-plugin-describe equals the packaged descriptor
   admission  the worker's ready banner (bbb_protocol_version=2)
@@ -191,6 +198,17 @@ injects it on every call; a case that names its own keeps it.
 Oracles: AII_OS_BIN (a directory holding aii-plugin-worker or aii), or
 aii-plugin-worker and aii on PATH. Missing prerequisites end the run
 as INCOMPLETE (exit 3), not as a pass. Exit 0 pass, 1 fail.
+
+Checks (validation_file in plugin.json): after the cases, each check of
+validation.json is sent on its lane and judged as the host judges it, its
+time measured against its own within_ms; every check is reported with how
+it ended, the cosine reached and the time taken, and the run passes only
+if every one passes. A native plugin (-native, or no wasm variant
+declared) is run as the host runs it: its carrier for this machine is
+started with exactly SEV_PLUGIN_SOCKET, SEV_PLUGIN_ID, AII_MODELS_DIR
+(-models-dir) and AII_RUNTIME_ROOT (-runtime-root), its ready line (with
+sdk=) is awaited, and its checks run; nothing is fetched, and the
+carrier's own probe is not a check.
 
 Case file shape:
   {"name": "…", "operation": "core.echo", "arguments": {…},
@@ -215,6 +233,14 @@ Case file shape:
 	}
 	fmt.Printf("aiisdk test: %s %s\n", cfg.ID, cfg.Version)
 	rep := &report{id: cfg.ID, version: cfg.Version, reportPath: *reportFlag}
+	if *native || !declaresWasm(cfg) {
+		h, err := newHarness(grants, cfg.Settings, settings)
+		if err != nil {
+			return fail("%v", err)
+		}
+		h.pluginID = cfg.ID
+		return testNative(dir, cfg, rep, h, *timeout, *modelsDir, *runtimeRoot)
+	}
 
 	var missing []string
 	tinygo := ""
@@ -269,6 +295,19 @@ Case file shape:
 	rep.pass("package", pkg)
 	rep.packageHash, rep.manifestHash = stagedSigningInputs(dir, cfg)
 
+	variant := wasmVariant(cfg)
+	packed, perr := packagedArtifact(dir, cfg, variant.VariantID)
+	if perr != nil {
+		rep.fail("artifact", perr.Error())
+		return finish(rep, h)
+	}
+	source := "the module aiisdk build produced (" + filepath.ToSlash(filepath.Join("dist", cfg.ID+".wasm")) + ")"
+	if variant.Artifact != "" {
+		source = "its own artifact, " + variant.Artifact
+	}
+	rep.verified("artifact", fmt.Sprintf("variant %s: %s (%s, %d bytes) — the bytes the package carries for it, from %s", variant.VariantID, packed.member, packed.hash, packed.size, source))
+	module = packed.path
+
 	out, verr := exec.Command(verifier, "plugin", "verify", pkg).CombinedOutput()
 	first := strings.TrimSpace(firstLineOf(string(out)))
 	if verr != nil || !strings.HasPrefix(first, "VERIFIED T") {
@@ -303,6 +342,15 @@ Case file shape:
 	}
 	for i, f := range files {
 		runCase(rep, h, w, i, f, *timeout)
+	}
+
+	if cfg.ValidationFile != "" {
+		invoke := func(n int, operation string, args json.RawMessage) (*workerdrive.Reply, error) {
+			return w.Invoke(fmt.Sprintf(`"check-%d"`, n), operation, args, *timeout)
+		}
+		runPackageChecks(rep, h, dir, cfg, variant.VariantID, invoke, nil)
+	} else {
+		rep.note("checks", "the plugin declares no checks; a host uses it on its readiness alone")
 	}
 	if aerr == nil {
 		if problems := confirmationStance(cfg.PluginFamily, account, unconfirmedMarks(files)); len(problems) > 0 {

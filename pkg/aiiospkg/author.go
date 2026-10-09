@@ -55,6 +55,8 @@ type AuthorConfig struct {
 	Runtimes []RuntimeDecl `json:"runtimes,omitempty"`
 
 	EmbeddingsFile string `json:"embeddings_file,omitempty"`
+
+	ValidationFile string `json:"validation_file,omitempty"`
 }
 
 type AuthorInterface struct {

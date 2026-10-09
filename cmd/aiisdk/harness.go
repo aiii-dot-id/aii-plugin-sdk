@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/aiii-dot-id/aii-plugin-sdk/pkg/aiiospkg"
@@ -57,7 +58,9 @@ type harness struct {
 	streamN int
 
 	toolsGranted bool
-	published    map[string]bool
+
+	checking  atomic.Bool
+	published map[string]bool
 
 	privateDir string
 	sandbox    string
@@ -208,8 +211,17 @@ func (h *harness) answer(method string, params json.RawMessage) (json.RawMessage
 	if err := json.Unmarshal(params, &p); err != nil || p.Operation == "" {
 		return nil, json.RawMessage(`{"code":-32602,"message":"operation (string) required"}`)
 	}
+	if h.checking.Load() && p.Operation != "settings.get" {
+		h.observe("%s -> refused (a check reads nothing of an identity's and writes nothing)", p.Operation)
+		return nil, deny(fmt.Sprintf("one of the package's checks is running, which reads nothing of an identity's and writes nothing; %s is refused during one", p.Operation), "VALIDATION_DENY")
+	}
 	switch p.Operation {
 	case "settings.get":
+		if h.checking.Load() {
+			declared := aiiospkg.EffectiveSettings(h.decls, nil)
+			h.observe("settings.get -> %d value(s) (the package's own, during a check)", len(declared))
+			return succeeded(map[string]interface{}{"values": declared}), nil
+		}
 		values := map[string]interface{}{}
 		for k, v := range h.runSettings {
 			values[k] = v

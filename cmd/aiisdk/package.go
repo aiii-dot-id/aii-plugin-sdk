@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -157,7 +160,7 @@ plugin (unsigned — trust tier T0):
 
 		for _, d := range cfg.Runtimes {
 			if req := aiiospkg.DeclaredCeilings(d); len(req) > 0 {
-				fmt.Fprintf(os.Stderr, "runtimes: variant %s exceeds the host's default ceilings; it activates only where the operator sets %s (the Plugins page, runtime ceilings) — state this in your README\n", d.VariantID, aiiospkg.FormatCeilings(req))
+				fmt.Fprintf(os.Stderr, "runtimes: variant %s exceeds the host's default files or depth ceiling; it activates only where the operator sets %s (the Plugins page, runtime ceilings) — state this in your README\n", d.VariantID, aiiospkg.FormatCeilings(req))
 			}
 		}
 		runtimes, err := aiiospkg.RuntimesJSON(cfg.Runtimes)
@@ -169,6 +172,14 @@ plugin (unsigned — trust tier T0):
 
 	if err := addSchemaFiles(install, descriptors, dir); err != nil {
 		return fail("%v", err)
+	}
+
+	if cfg.ValidationFile != "" {
+		raw, err := packValidation(dir, cfg, install, descriptors)
+		if err != nil {
+			return fail("validation: %v", err)
+		}
+		install[aiiospkg.ValidationFile] = raw
 	}
 
 	manifest, err := aiiospkg.BuildManifest(cfg, methods, install)
@@ -295,7 +306,7 @@ func runOracleDescribe(argv []string, module string) ([]byte, error) {
 }
 
 func scrubbedEnv() []string {
-	keep := []string{"PATH", "HOME", "TMPDIR", "TEMP", "TMP", "GOPATH", "GOCACHE", "GOMODCACHE", "GOROOT", "SystemRoot", "USERPROFILE"}
+	keep := []string{"PATH", "HOME", "TMPDIR", "TEMP", "TMP", "GOPATH", "GOCACHE", "GOMODCACHE", "GOROOT", "SystemRoot", "USERPROFILE", "LOCALAPPDATA", "APPDATA"}
 	var env []string
 	for _, k := range keep {
 		if v := os.Getenv(k); v != "" {
@@ -379,6 +390,45 @@ func variantArtifacts(dir string, cfg *aiiospkg.AuthorConfig) (map[string][]byte
 	return out, nil
 }
 
+type packaged struct {
+	path, member, hash string
+	size               int
+}
+
+func packagedArtifact(dir string, cfg *aiiospkg.AuthorConfig, variantID string) (packaged, error) {
+	stage := stageDir(dir, cfg)
+	tree, err := aiiospkg.ReadTree(stage)
+	if err != nil {
+		return packaged{}, fmt.Errorf("reading the staged package %s: %w", stage, err)
+	}
+	var m struct {
+		Variants []struct {
+			VariantID    string `json:"variant_id"`
+			Entrypoint   string `json:"entrypoint"`
+			ArtifactHash string `json:"artifact_hash"`
+		} `json:"variants"`
+	}
+	if err := json.Unmarshal(tree.Files["manifest.json"], &m); err != nil {
+		return packaged{}, fmt.Errorf("the staged manifest does not read: %w", err)
+	}
+	for _, v := range m.Variants {
+		if v.VariantID != variantID {
+			continue
+		}
+		member := "install-root/" + v.Entrypoint
+		b, ok := tree.Files[member]
+		if !ok {
+			return packaged{}, fmt.Errorf("the staged package carries no %s, the entrypoint its manifest names for variant %s", member, variantID)
+		}
+		sum := sha256.Sum256(b)
+		if got := "sha256:" + hex.EncodeToString(sum[:]); got != v.ArtifactHash {
+			return packaged{}, fmt.Errorf("the staged %s is %s; the manifest binds %s for variant %s", member, got, v.ArtifactHash, variantID)
+		}
+		return packaged{path: filepath.Join(stage, filepath.FromSlash(member)), member: member, hash: v.ArtifactHash, size: len(b)}, nil
+	}
+	return packaged{}, fmt.Errorf("the staged manifest declares no variant %s", variantID)
+}
+
 func resolveArtifact(dir, rel string) (string, error) {
 	return resolveContained(dir, rel, "artifact")
 }
@@ -433,6 +483,87 @@ func packEmbeddings(dir string, cfg *aiiospkg.AuthorConfig, methods []string, de
 		return nil, err
 	}
 	if err := aiiospkg.ValidateEmbeddingsDescriptors(descriptors); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func packValidation(dir string, cfg *aiiospkg.AuthorConfig, install map[string][]byte, descriptors []byte) ([]byte, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, cfg.ValidationFile))
+	if err != nil {
+		return nil, err
+	}
+
+	staged, err := aiiospkg.ParseValidation(raw, func(rel string) ([]byte, bool, error) {
+		if b, ok := install[rel]; ok {
+			return b, true, nil
+		}
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return b, err == nil, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range staged.Checks {
+		if c.Lane != aiiospkg.LaneSession || c.Audio == "" {
+			continue
+		}
+		if c.Unresolved != "" {
+			return nil, fmt.Errorf("%s: check %q can never pass: %s", aiiospkg.ValidationFile, c.Name, c.Unresolved)
+		}
+		if _, packed := install[c.Audio]; !packed {
+			install[c.Audio] = c.WAV
+		}
+	}
+
+	v, err := aiiospkg.ParseValidation(raw, func(rel string) ([]byte, bool, error) {
+		b, ok := install[rel]
+		return b, ok, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	p := aiiospkg.PackageChecks{Operations: map[string]aiiospkg.OperationContract{},
+		SpeechEngine: cfg.PluginFamily == "voice_interface", Native: map[string]bool{}}
+	for _, variant := range cfg.Variants {
+		p.Variants = append(p.Variants, variant.VariantID)
+		if variant.ExecutionRuntime == "native_t3_component" {
+			p.Native[variant.VariantID] = true
+		}
+	}
+	if b, ok := install[aiiospkg.EmbeddingsFile]; ok {
+		if p.Source, err = aiiospkg.ParseEmbeddings(b); err != nil {
+			return nil, err
+		}
+	}
+	var ops []struct {
+		ID               string `json:"id"`
+		Effects          string `json:"effects"`
+		OperatorConfirms bool   `json:"operator_confirms"`
+	}
+	if err := json.Unmarshal(descriptors, &ops); err != nil {
+		return nil, fmt.Errorf("the descriptor emission is not a list: %v", err)
+	}
+	session := map[string]bool{}
+	ifaces := cfg.InterfaceList()
+	methods := make([]string, 0, len(ops))
+	for _, op := range ops {
+		methods = append(methods, op.ID)
+	}
+	if byIface, perr := aiiospkg.PartitionMethods(ifaces, methods); perr == nil {
+		for _, m := range byIface[aiiospkg.SessionInterfaceID] {
+			session[m] = true
+		}
+	}
+	for _, op := range ops {
+		if !session[op.ID] {
+			p.Operations[op.ID] = aiiospkg.OperationContract{Effects: op.Effects, OperatorConfirms: op.OperatorConfirms}
+		}
+	}
+	if err := aiiospkg.ValidatePackageChecks(v, p); err != nil {
 		return nil, err
 	}
 	return raw, nil

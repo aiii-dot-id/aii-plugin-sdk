@@ -54,6 +54,9 @@ Commands:
               runtime archive the host installs beside your carrier,
               and print the numbers your plugin.json runtime
               declaration carries once the archive is published.
+  version     Print which kit built this aiisdk: its module, version
+              and commit, as the Go toolchain recorded them in the
+              binary ("unknown", with the reason, where it did not).
 
 Run 'aiisdk <command> -h' for that command's flags and details.
 
@@ -93,6 +96,8 @@ func main() {
 		code = cmdPublish(os.Args[2:])
 	case "runtime-pack":
 		code = cmdRuntimePack(os.Args[2:])
+	case "version":
+		code = cmdVersion(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "aiisdk: unknown command %q\n\n%s", os.Args[1], usageText)
 		code = 2

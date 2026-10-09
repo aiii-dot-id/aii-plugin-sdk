@@ -52,7 +52,9 @@ AIII-PQ-SIGNATURE-V1-ROOT). Key ids are clearly dev-named
 (dev_certifier_<hostname>_k1). SLH-DSA keygen and signing are slow by
 design — the chain is minted once and reused across plugins.
 
-Key material is written only to the 0600 files, never printed.
+Key material is written only to the key files, never printed. They are
+readable by this account alone: 0600, and on Windows, where the mode
+bits do not protect a file, a DACL that allows this account and no other.
 
 Flags:
 `)

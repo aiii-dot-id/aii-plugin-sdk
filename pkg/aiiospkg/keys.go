@@ -11,6 +11,8 @@ import (
 
 	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	"github.com/cloudflare/circl/sign/slhdsa"
+
+	"github.com/aiii-dot-id/aii-plugin-sdk/internal/fileperm"
 )
 
 const slhParamID = slhdsa.SHA2_256s
@@ -80,7 +82,7 @@ func SaveKeyFile(r *Role, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(raw, '\n'), 0o600)
+	return fileperm.WritePrivate(path, append(raw, '\n'))
 }
 
 func LoadKeyFile(path string) (*Role, error) {

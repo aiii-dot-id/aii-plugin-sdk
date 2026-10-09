@@ -16,14 +16,15 @@ func cmdRuntimePack(args []string) int {
 	dir := fs.String("dir", "", "the runtime tree to pack (required)")
 	root := fs.String("root", "runtime", "the archive's root directory name")
 	out := fs.String("o", "", "the archive to write (required)")
+	platform := fs.String("platform", "", "the platform the runtime is for, as its variant names it (linux, macos, windows, android, ios); for windows, a file with its executable bit set is refused")
 	d := aiiospkg.RuntimeLimits
-	installed := fs.String("max-installed-bytes", "", fmt.Sprintf("budget for the installed tree (bytes, or with a K/M/G suffix); the host's default is %d", d.MaxInstalledBytes))
+	installed := fs.String("max-installed-bytes", "", "your own bound on the installed tree (bytes, or with a K/M/G suffix); unset, no bound: the host sets no byte ceiling by default")
 	files := fs.Int("max-files", d.MaxFiles, "budget for the number of files; the host admits a quarter as many directories again")
-	fileBytes := fs.String("max-file-bytes", "", fmt.Sprintf("budget for the largest file; the host's default is %d", d.MaxFileBytes))
-	compressed := fs.String("max-compressed-bytes", "", fmt.Sprintf("budget for the archive itself; the host's default is %d", d.MaxCompressedBytes))
+	fileBytes := fs.String("max-file-bytes", "", "your own bound on the largest file; unset, no bound")
+	compressed := fs.String("max-compressed-bytes", "", "your own bound on the archive itself; unset, no bound")
 	depth := fs.Int("max-depth", d.MaxDepth, "budget for path depth in segments")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: aiisdk runtime-pack -dir <tree> -o <archive.tar.gz> [-root runtime]
+		fmt.Fprint(os.Stderr, `Usage: aiisdk runtime-pack -dir <tree> -o <archive.tar.gz> [-root runtime] [-platform <platform>]
 
 Packs a native engine's runtime tree — interpreter, libraries, engine
 code; never model data — as the companion runtime archive the host
@@ -39,16 +40,27 @@ aiios_min_version is 0.1.14 or later, largest_file_bytes and depth, the
 archive's extent, which lets the host refuse a runtime the operator's
 ceilings cannot admit before downloading it.
 
-A tree past the host's default ceilings is refused unless you pass the
-budget it needs (-max-installed-bytes, -max-files, -max-file-bytes,
--max-compressed-bytes, -max-depth). The files budget covers the tree's
-directories too: the host admits the files and a quarter as many
-directories again, and a tree with more is refused here with the least
--max-files that admits it. The budget is your declared
-requirement, never permission: the report then names, as
-requires_operator_ceilings, the settings the operator must raise on the
-host's Plugins page before the activation is admitted. State them in
-your README.
+Name the platform the runtime is for with -platform, as its variant
+names it. A runtime for Windows lists every file as "file": Windows
+keeps no executable mark on a file, so the host refuses an inventory
+row "exec" there, after the whole runtime has downloaded. Packed with
+-platform windows, a tree with a file whose executable bit is set is
+refused, naming the file; clear the bits (chmod a-x) and pack again.
+
+The host sets no byte ceiling by default: it holds the runtime to the
+bytes your declaration states and installs it where the free disk holds
+it, and an operator who sets a byte ceiling on the Plugins page refuses
+a runtime past it before the download. -max-installed-bytes,
+-max-file-bytes and -max-compressed-bytes are your own bounds, refused
+here when passed. A tree past the host's default files or depth ceiling
+is refused unless you pass the budget it needs (-max-files,
+-max-depth). The files budget covers the tree's directories too: the
+host admits the files and a quarter as many directories again, and a
+tree with more is refused here with the least -max-files that admits
+it. The budget is your declared requirement, never permission: the
+report then names, as requires_operator_ceilings, the settings the
+operator must raise on the host's Plugins page before the activation
+is admitted. State them in your README.
 `)
 	}
 	if err := fs.Parse(args); err != nil {
@@ -81,7 +93,7 @@ your README.
 	if err != nil {
 		return fail("%v", err)
 	}
-	rep, werr := aiiospkg.WriteRuntimeTreeWithin(f, *dir, *root, budget)
+	rep, werr := aiiospkg.WriteRuntimeTreeFor(f, *dir, *root, *platform, budget)
 	cerr := f.Close()
 	if werr != nil {
 		_ = os.Remove(*out)
@@ -99,7 +111,7 @@ your README.
 	}
 	if req := rep.RequiredCeilings(); len(req) > 0 {
 		report["requires_operator_ceilings"] = req
-		fmt.Fprintf(os.Stderr, "runtime-pack: this runtime exceeds the host's default ceilings; it activates only where the operator sets %s (the Plugins page, runtime ceilings) — state this in your README\n", aiiospkg.FormatCeilings(req))
+		fmt.Fprintf(os.Stderr, "runtime-pack: this runtime exceeds the host's default files or depth ceiling; it activates only where the operator sets %s (the Plugins page, runtime ceilings) — state this in your README\n", aiiospkg.FormatCeilings(req))
 	}
 	if err := enc.Encode(report); err != nil {
 		return fail("%v", err)

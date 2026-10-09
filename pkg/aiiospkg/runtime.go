@@ -29,7 +29,7 @@ type TreeLimits struct {
 	MaxInventoryBytes  int64
 }
 
-var RuntimeLimits = TreeLimits{MaxInstalledBytes: 1 << 30, MaxFiles: 32768, MaxFileBytes: 512 << 20, MaxCompressedBytes: 512 << 20, MaxDepth: 24, MaxInventoryBytes: 16 << 20}
+var RuntimeLimits = TreeLimits{MaxFiles: 32768, MaxDepth: 24, MaxInventoryBytes: 16 << 20}
 
 func (l TreeLimits) filled() TreeLimits {
 	d := RuntimeLimits
@@ -170,7 +170,7 @@ func DeclaredCeilings(d RuntimeDecl) map[string]int64 {
 }
 
 func ExceededCeilings(d RuntimeDecl, limits TreeLimits) map[string]int64 {
-	l := limits.filled()
+	l := limits.forDecl(d)
 	req := map[string]int64{}
 	if d.InstalledBytes > l.MaxInstalledBytes {
 		req[CeilingInstalledBytes] = d.InstalledBytes
@@ -188,6 +188,20 @@ func ExceededCeilings(d RuntimeDecl, limits TreeLimits) map[string]int64 {
 		req[CeilingDepth] = int64(*d.Depth)
 	}
 	return req
+}
+
+func (l TreeLimits) forDecl(d RuntimeDecl) TreeLimits {
+	l = l.filled()
+	if l.MaxCompressedBytes <= 0 {
+		l.MaxCompressedBytes = d.Size
+	}
+	if l.MaxInstalledBytes <= 0 {
+		l.MaxInstalledBytes = d.InstalledBytes
+	}
+	if l.MaxFileBytes <= 0 {
+		l.MaxFileBytes = d.InstalledBytes
+	}
+	return l
 }
 
 func RuntimesJSON(decls []RuntimeDecl) ([]byte, error) {
@@ -235,7 +249,7 @@ func leastFilesCeiling(files, dirs int) int {
 }
 
 func (a *RuntimeArchive) RequiredCeilings() map[string]int64 {
-	d := RuntimeLimits
+	d := RuntimeLimits.forDecl(RuntimeDecl{Size: a.Size, InstalledBytes: a.InstalledBytes})
 	req := map[string]int64{}
 	if a.InstalledBytes > d.MaxInstalledBytes {
 		req[CeilingInstalledBytes] = a.InstalledBytes
@@ -256,11 +270,15 @@ func (a *RuntimeArchive) RequiredCeilings() map[string]int64 {
 }
 
 func WriteRuntimeTree(w io.Writer, dir, root string) (*RuntimeArchive, error) {
-	return writeRuntimeTree(w, dir, root, RuntimeLimits)
+	return writeRuntimeTree(w, dir, root, "", RuntimeLimits)
 }
 
 func WriteRuntimeTreeWithin(w io.Writer, dir, root string, budget TreeLimits) (*RuntimeArchive, error) {
-	return writeRuntimeTree(w, dir, root, budget)
+	return writeRuntimeTree(w, dir, root, "", budget)
+}
+
+func WriteRuntimeTreeFor(w io.Writer, dir, root, platform string, budget TreeLimits) (*RuntimeArchive, error) {
+	return writeRuntimeTree(w, dir, root, platform, budget)
 }
 
 const maxTreePathBytes = 511
@@ -282,10 +300,13 @@ func treeSegmentForbidden(seg string) bool {
 	return false
 }
 
-func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*RuntimeArchive, error) {
+func writeRuntimeTree(w io.Writer, dir, root, platform string, budget TreeLimits) (*RuntimeArchive, error) {
 	budget = budget.filled()
 	if root == "" || strings.Contains(root, "/") || treeSegmentForbidden(root) {
 		return nil, fmt.Errorf("root %q must be one admitted path component", root)
+	}
+	if platform != "" && !enumHas(platform, "linux", "macos", "windows", "android", "ios") {
+		return nil, fmt.Errorf("platform %q must be one of linux, macos, windows, android, ios, as the runtime's variant names it", platform)
 	}
 	type source struct {
 		rel, abs, sha, mode string
@@ -337,7 +358,7 @@ func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*Runtim
 		if ierr != nil {
 			return ierr
 		}
-		if info.Size() > budget.MaxFileBytes {
+		if budget.MaxFileBytes > 0 && info.Size() > budget.MaxFileBytes {
 			return fmt.Errorf("%s is %d bytes; the budget is %d per file (-max-file-bytes)", rel, info.Size(), budget.MaxFileBytes)
 		}
 		if info.Size() > largest {
@@ -360,6 +381,24 @@ func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*Runtim
 	}
 	if len(files) == 0 {
 		return nil, fmt.Errorf("%s holds no files", dir)
+	}
+	if platform == "windows" {
+		var marked []string
+		for _, f := range files {
+			if f.mode == "exec" {
+				marked = append(marked, f.rel)
+			}
+		}
+		if len(marked) > 0 {
+			more := ""
+			switch n := len(marked) - 1; {
+			case n == 1:
+				more = " and 1 more file"
+			case n > 1:
+				more = fmt.Sprintf(" and %d more files", n)
+			}
+			return nil, fmt.Errorf(`the executable bit is set on %s%s, and this runtime is for Windows, which keeps no executable mark on a file: the host refuses an inventory row "exec" there, after the whole runtime has downloaded; clear the bit on every file of a Windows runtime (chmod a-x) and pack again, and each is listed as "file"`, marked[0], more)
+		}
 	}
 	if len(files) > budget.MaxFiles {
 		return nil, fmt.Errorf("%d files exceed the budget of %d (-max-files); a tree past the host's defaults needs the operator's ceilings, which the report names", len(files), budget.MaxFiles)
@@ -400,8 +439,8 @@ func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*Runtim
 	if a, b, collide := casefoldSiblings(paths); collide {
 		return nil, fmt.Errorf("%s and %s differ only in letter case; a filesystem that folds case would merge them, so the host refuses the archive", a, b)
 	}
-	if total > budget.MaxInstalledBytes {
-		return nil, fmt.Errorf("%d installed bytes exceed the budget of %d (-max-installed-bytes); a tree past the host's defaults needs the operator's ceilings, which the report names", total, budget.MaxInstalledBytes)
+	if budget.MaxInstalledBytes > 0 && total > budget.MaxInstalledBytes {
+		return nil, fmt.Errorf("%d installed bytes exceed the budget of %d (-max-installed-bytes)", total, budget.MaxInstalledBytes)
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
 	inv := Inventory{InstalledBytes: total}
@@ -489,7 +528,7 @@ func writeRuntimeTree(w io.Writer, dir, root string, budget TreeLimits) (*Runtim
 	if err := zw.Close(); err != nil {
 		return nil, err
 	}
-	if cw.n > budget.MaxCompressedBytes {
+	if budget.MaxCompressedBytes > 0 && cw.n > budget.MaxCompressedBytes {
 		return nil, fmt.Errorf("the archive is %d bytes compressed; the budget is %d (-max-compressed-bytes)", cw.n, budget.MaxCompressedBytes)
 	}
 	invSum := sha256.Sum256(inventory)

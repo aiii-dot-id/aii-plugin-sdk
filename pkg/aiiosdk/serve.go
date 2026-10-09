@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
+	"strings"
 	"sync/atomic"
+	"unicode"
 )
 
 var nativeTransport atomic.Pointer[stdioTransport]
@@ -45,7 +48,39 @@ type ReadyReport struct {
 }
 
 func ReadyLine(mark string, r ReadyReport) string {
-	return fmt.Sprintf("%s event=ready models_loaded=%d accelerator=%s probe_ms=%d", mark, r.ModelsLoaded, r.Accelerator, r.ProbeMS)
+	return fmt.Sprintf("%s event=ready models_loaded=%d accelerator=%s probe_ms=%d sdk=%s", mark, r.ModelsLoaded, r.Accelerator, r.ProbeMS, kitVersion(debug.ReadBuildInfo()))
+}
+
+const kitModule = "github.com/aiii-dot-id/aii-plugin-sdk"
+
+func kitVersion(bi *debug.BuildInfo, ok bool) string {
+	if !ok || bi == nil {
+		return "unknown"
+	}
+	m := &bi.Main
+	if m.Path != kitModule {
+		m = nil
+		for _, d := range bi.Deps {
+			if d.Path == kitModule {
+				m = d
+				break
+			}
+		}
+	}
+	if m == nil {
+		return "unknown"
+	}
+	v := m.Version
+	if r := m.Replace; r != nil {
+		v = "(devel)"
+		if r.Version != "" && r.Version != "(devel)" {
+			v = r.Path + "@" + r.Version
+		}
+	}
+	if v == "" || strings.ContainsFunc(v, unicode.IsSpace) {
+		return "unknown"
+	}
+	return v
 }
 
 func (p *Plugin) ServeReady(mark string, r ReadyReport) error {
