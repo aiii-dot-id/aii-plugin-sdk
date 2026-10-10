@@ -79,6 +79,10 @@ var errOutQueueFull = errors.New("outbound queue saturated")
 
 var ErrLaneEnded = errors.New("aiiosdk: the session lane ended")
 
+var ErrNotSent = errors.New("aiiosdk: hostcall not sent")
+
+var ErrOutcomeUnknown = errors.New("aiiosdk: hostcall outcome unknown")
+
 type outbound struct {
 	frame   []byte
 	seq     uint64
@@ -543,38 +547,59 @@ func (s *Session) HostCallTo(ctx context.Context, operation string, target any, 
 	}
 	ob, qerr := s.enqueue(ctx, frame)
 	if qerr != nil {
-		return nil, fmt.Errorf("aiiosdk: hostcall not sent: the lane ended, or the call was cancelled, before the frame was queued")
+		return nil, fmt.Errorf("%w: the lane ended, or the call was cancelled, before the frame was queued", ErrNotSent)
 	}
 	select {
 	case werr := <-ob.done:
 		if errors.Is(werr, errNotSent) {
-			return nil, fmt.Errorf("aiiosdk: hostcall not sent: the lane ended before the frame was written")
+			return nil, fmt.Errorf("%w: the lane ended before the frame was written", ErrNotSent)
 		}
 		if werr != nil {
-			return nil, fmt.Errorf("aiiosdk: hostcall outcome unknown: the write failed after it began: %w", werr)
+			msg := fmt.Sprintf("%v: the write failed after it began: %v", ErrOutcomeUnknown, werr)
+			return nil, &hostCallError{msg: msg, outcome: ErrOutcomeUnknown, cause: werr}
 		}
 	case <-ctx.Done():
 		if ob.claimed.CompareAndSwap(false, true) {
-			return nil, fmt.Errorf("aiiosdk: hostcall not sent: cancelled before the transport took the frame")
+			return nil, fmt.Errorf("%w: cancelled before the transport took the frame", ErrNotSent)
 		}
-		return nil, fmt.Errorf("aiiosdk: hostcall outcome unknown: cancelled while the transport was writing the frame")
+		return nil, fmt.Errorf("%w: cancelled while the transport was writing the frame", ErrOutcomeUnknown)
 	case <-s.closed:
 		if ob.claimed.CompareAndSwap(false, true) {
-			return nil, fmt.Errorf("aiiosdk: hostcall not sent: the lane ended before the frame was written")
+			return nil, fmt.Errorf("%w: the lane ended before the frame was written", ErrNotSent)
 		}
-		return nil, fmt.Errorf("aiiosdk: hostcall outcome unknown: the lane ended while the transport was writing the frame")
+		return nil, fmt.Errorf("%w: the lane ended while the transport was writing the frame", ErrOutcomeUnknown)
 	}
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("aiiosdk: hostcall outcome unknown: sent, no reply before cancellation")
+		return nil, fmt.Errorf("%w: sent, no reply before cancellation", ErrOutcomeUnknown)
 	case <-s.closed:
-		return nil, fmt.Errorf("aiiosdk: hostcall outcome unknown: sent, the session ended before the host answered")
+		return nil, fmt.Errorf("%w: sent, the session ended before the host answered", ErrOutcomeUnknown)
 	case reply := <-ch:
 		if len(reply.errObj) != 0 {
-			return nil, fmt.Errorf("aiiosdk: host refused: %s", reply.errObj)
+			return nil, hostRefused(reply.errObj)
 		}
 		return Object(reply.result), nil
 	}
+}
+
+type hostCallError struct {
+	msg     string
+	outcome error
+	cause   error
+}
+
+func (e *hostCallError) Error() string        { return e.msg }
+func (e *hostCallError) Is(target error) bool { return e.outcome != nil && target == e.outcome }
+func (e *hostCallError) Unwrap() error        { return e.cause }
+
+func hostRefused(errObj json.RawMessage) error {
+	msg := fmt.Sprintf("aiiosdk: host refused: %s", errObj)
+	if _, err := decodeHostReply(errObj); err != nil {
+		if d, ok := err.(*Denied); ok {
+			return &hostCallError{msg: msg, cause: d}
+		}
+	}
+	return errors.New(msg)
 }
 
 func (s *Session) deliverReply(idRaw json.RawMessage, reply sessionReply) {

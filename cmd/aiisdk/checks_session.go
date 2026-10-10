@@ -18,6 +18,8 @@ const (
 
 	sessionStopBound = 5 * time.Second
 
+	senderRetireBound = time.Second
+
 	checkNotRunHere = "not_run_here"
 )
 
@@ -27,8 +29,15 @@ type sessionDriver struct {
 	w       *workerdrive.SessionWorker
 	streams uint32
 	out     *outputTally
+	sending *sender
 
-	gone bool
+	gone    bool
+	goneWhy string
+}
+
+type sender struct {
+	stop chan struct{}
+	done chan struct{}
 }
 
 func newSessionDriver(w *workerdrive.SessionWorker) *sessionDriver {
@@ -106,12 +115,13 @@ type sessionEvent struct {
 func (d *sessionDriver) run(n int, c aiiospkg.Check) checkResult {
 	r := checkResult{name: c.Name}
 	if d.gone {
-		r.outcome, r.words = checkUnanswered, "not asked: the engine never ended an earlier check's session"
+		r.outcome, r.words = checkUnanswered, "not asked: "+d.goneWhy
 		return r
 	}
 	id := fmt.Sprintf("check-%d", n)
 	args := map[string]interface{}{"session_id": id, "check": true, "output_handle": id + "-out"}
 	var rec aiiospkg.Recording
+	var input uint32
 	if c.Audio != "" {
 		var why string
 		if rec, why = aiiospkg.ReadRecording(c.WAV); why != "" {
@@ -119,8 +129,9 @@ func (d *sessionDriver) run(n int, c aiiospkg.Check) checkResult {
 			return r
 		}
 		d.streams++
+		input = d.streams
 		args["input_handle"] = id + "-in"
-		args["audio"] = map[string]interface{}{"format": "s16le", "input": map[string]interface{}{"rate": rec.Rate, "channels": rec.Channels, "stream": d.streams}, "output": checkSpeaker}
+		args["audio"] = map[string]interface{}{"format": "s16le", "input": map[string]interface{}{"rate": rec.Rate, "channels": rec.Channels, "stream": input}, "output": checkSpeaker}
 	} else {
 		args["audio"] = map[string]interface{}{"format": "s16le", "input": nil, "output": checkSpeaker}
 	}
@@ -155,7 +166,7 @@ func (d *sessionDriver) run(n int, c aiiospkg.Check) checkResult {
 			in.rate, in.channels, rec.Rate, rec.Channels, in.rate, in.channels)
 		return d.end(r, id)
 	}
-	stream, fail := d.listen(id, c, rec, &ans, sent)
+	stream, fail := d.listen(id, c, rec, input, &ans, sent)
 	r.took = time.Since(sent)
 	if ans.SynthesisID != "" && stream >= 0 {
 		end, _, level := d.out.stream(uint32(stream))
@@ -176,7 +187,7 @@ func (d *sessionDriver) run(n int, c aiiospkg.Check) checkResult {
 	return d.end(r, id)
 }
 
-func (d *sessionDriver) listen(id string, c aiiospkg.Check, rec aiiospkg.Recording, ans *aiiospkg.SessionAnswer, sent time.Time) (stream int64, fail error) {
+func (d *sessionDriver) listen(id string, c aiiospkg.Check, rec aiiospkg.Recording, input uint32, ans *aiiospkg.SessionAnswer, sent time.Time) (stream int64, fail error) {
 	stream = -1
 	deadline := time.NewTimer(time.Until(sent.Add(c.Within)))
 	defer deadline.Stop()
@@ -212,9 +223,9 @@ func (d *sessionDriver) listen(id string, c aiiospkg.Check, rec aiiospkg.Recordi
 			case ev.Type == "session_ready" && !started:
 				started = true
 				if c.Audio != "" {
-					ch := make(chan struct{})
-					sentAll = ch
-					go d.pace(rec, ch)
+					s := &sender{stop: make(chan struct{}), done: make(chan struct{})}
+					d.sending, sentAll = s, s.done
+					go d.pace(rec, input, s)
 					break
 				}
 				_, err := d.w.Control("speech.session.synthesize", map[string]interface{}{"session_id": id, "synthesis_id": ans.SynthesisID, "text": c.Text}, sessionControlBound)
@@ -264,11 +275,27 @@ func (d *sessionDriver) listen(id string, c aiiospkg.Check, rec aiiospkg.Recordi
 	}
 }
 
-func (d *sessionDriver) pace(rec aiiospkg.Recording, sent chan<- struct{}) {
-	defer close(sent)
+func (d *sessionDriver) pace(rec aiiospkg.Recording, stream uint32, s *sender) {
+	defer close(s.done)
 	frame := 2 * rec.Channels
 	per := rec.Rate / 50 * frame
 	origin := time.Now()
+
+	due := func(at int64) bool {
+		t := time.NewTimer(time.Until(origin.Add(time.Duration(at) * time.Second / time.Duration(rec.Rate))))
+		defer t.Stop()
+		select {
+		case <-s.stop:
+			return false
+		case <-t.C:
+		}
+		select {
+		case <-s.stop:
+			return false
+		default:
+			return true
+		}
+	}
 	seq := uint32(0)
 	var at int64
 	for off := 0; off < len(rec.PCM); off += per {
@@ -276,19 +303,59 @@ func (d *sessionDriver) pace(rec aiiospkg.Recording, sent chan<- struct{}) {
 		if end > len(rec.PCM) {
 			end = len(rec.PCM)
 		}
-		time.Sleep(time.Until(origin.Add(time.Duration(at) * time.Second / time.Duration(rec.Rate))))
+		if !due(at) {
+			return
+		}
 		seq++
-		if d.w.WriteAudio(sdk.AudioFrame{Kind: sdk.AudioPCM, Stream: d.streams, Seq: seq, Start: at, PCM: rec.PCM[off:end]}) != nil {
+		if d.w.WriteAudio(sdk.AudioFrame{Kind: sdk.AudioPCM, Stream: stream, Seq: seq, Start: at, PCM: rec.PCM[off:end]}) != nil {
 			return
 		}
 		at += int64((end - off) / frame)
 	}
-	time.Sleep(time.Until(origin.Add(time.Duration(at) * time.Second / time.Duration(rec.Rate))))
+	if !due(at) {
+		return
+	}
 	seq++
-	_ = d.w.WriteAudio(sdk.AudioFrame{Kind: sdk.AudioEnd, Stream: d.streams, Seq: seq, Start: at})
+	_ = d.w.WriteAudio(sdk.AudioFrame{Kind: sdk.AudioEnd, Stream: stream, Seq: seq, Start: at})
 }
 
 func (d *sessionDriver) end(r checkResult, id string) checkResult {
+	if d.sending != nil {
+		close(d.sending.stop)
+	}
+	r = d.abort(r, id)
+	d.retire(&r)
+	return r
+}
+
+func (d *sessionDriver) retire(r *checkResult) {
+	s := d.sending
+	if s == nil {
+		return
+	}
+	d.sending = nil
+	wait := time.NewTimer(senderRetireBound)
+	defer wait.Stop()
+	select {
+	case <-s.done:
+		return
+	case <-wait.C:
+	}
+	_ = d.w.EndInput()
+	if r.words != "" {
+		r.words += "; "
+	}
+	r.words += "the engine stopped reading its input: this check's recording could not be stopped mid-write, so its carrier's input is closed"
+	if !d.gone {
+		d.gone, d.goneWhy = true, "the engine stopped reading its input at an earlier check, and its carrier's input was closed"
+	}
+	select {
+	case <-s.done:
+	case <-time.After(sessionControlBound):
+	}
+}
+
+func (d *sessionDriver) abort(r checkResult, id string) checkResult {
 	_, _ = d.w.Control("speech.session.close", map[string]interface{}{"session_id": id, "mode": "abort", "reason": "the check is over"}, sessionControlBound)
 	wait := time.NewTimer(sessionStopBound)
 	defer wait.Stop()
@@ -311,7 +378,7 @@ func (d *sessionDriver) end(r checkResult, id string) checkResult {
 			if err == nil && json.Unmarshal(snap, &s) == nil && (s.Lifecycle == "closed" || s.Lifecycle == "failed") {
 				return r
 			}
-			d.gone = true
+			d.gone, d.goneWhy = true, "the engine never ended an earlier check's session"
 			if r.outcome != checkWrong {
 				r.outcome = checkTimedOut
 				if r.words != "" {

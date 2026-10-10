@@ -64,9 +64,11 @@ type report struct {
 	id, version      string
 	reportPath       string
 	incompletePrereq bool
-	packageHash      string
-	manifestHash     string
-	boundaryDone     bool
+
+	unrun        int
+	packageHash  string
+	manifestHash string
+	boundaryDone bool
 }
 
 func (r *report) add(name, status, class, detail, next string) {
@@ -90,6 +92,7 @@ func (r *report) incomplete(what, detail, next string) {
 }
 
 func (r *report) incompleteLocal(what, detail, next string) {
+	r.unrun++
 	r.add(what, "incomplete", "local", detail, next)
 }
 
@@ -109,6 +112,8 @@ func (r *report) result() (string, int) {
 		return "incomplete", exitIncomplete
 	case r.fails > 0:
 		return "fail", exitFail
+	case r.unrun > 0:
+		return "incomplete", exitIncomplete
 	default:
 		return "pass", exitPass
 	}
@@ -203,12 +208,14 @@ Checks (validation_file in plugin.json): after the cases, each check of
 validation.json is sent on its lane and judged as the host judges it, its
 time measured against its own within_ms; every check is reported with how
 it ended, the cosine reached and the time taken, and the run passes only
-if every one passes. A native plugin (-native, or no wasm variant
-declared) is run as the host runs it: its carrier for this machine is
-started with exactly SEV_PLUGIN_SOCKET, SEV_PLUGIN_ID, AII_MODELS_DIR
-(-models-dir) and AII_RUNTIME_ROOT (-runtime-root), its ready line (with
-sdk=) is awaited, and its checks run; nothing is fetched, and the
-carrier's own probe is not a check.
+if every one passes; one this kit cannot run here (a recording at another
+rate than the engine answers) leaves the run INCOMPLETE (exit 3). A
+native plugin (-native, or no wasm variant declared) is run as the host
+runs it: its carrier for this machine is started with exactly
+SEV_PLUGIN_SOCKET, SEV_PLUGIN_ID, AII_MODELS_DIR (-models-dir) and
+AII_RUNTIME_ROOT (-runtime-root), its ready line (with sdk=) is awaited,
+and its checks run; nothing is fetched, and the carrier's own probe is
+not a check.
 
 Case file shape:
   {"name": "…", "operation": "core.echo", "arguments": {…},
@@ -493,7 +500,11 @@ func finish(rep *report, h *harness) int {
 	}
 	switch result {
 	case "incomplete":
-		fmt.Println("RESULT: INCOMPLETE — prerequisites missing; nothing was proven")
+		if rep.incompletePrereq {
+			fmt.Println("RESULT: INCOMPLETE — prerequisites missing; nothing was proven")
+			break
+		}
+		fmt.Printf("RESULT: INCOMPLETE — %d required check(s) could not run here (above); the %d that ran passed (%d cases) — local qualification is not complete\n", rep.unrun, rep.checks, rep.cases)
 	case "fail":
 		fmt.Printf("RESULT: FAIL (%d of %d checks failed, %d cases) — local qualification\n", rep.fails, rep.checks, rep.cases)
 	default:

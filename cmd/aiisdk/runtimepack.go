@@ -11,6 +11,8 @@ import (
 	"github.com/aiii-dot-id/aii-plugin-sdk/pkg/aiiospkg"
 )
 
+var writeRuntimeTreeFor = aiiospkg.WriteRuntimeTreeFor
+
 func cmdRuntimePack(args []string) int {
 	fs := flag.NewFlagSet("aiisdk runtime-pack", flag.ExitOnError)
 	dir := fs.String("dir", "", "the runtime tree to pack (required)")
@@ -93,7 +95,7 @@ is admitted. State them in your README.
 	if err != nil {
 		return fail("%v", err)
 	}
-	rep, werr := aiiospkg.WriteRuntimeTreeFor(f, *dir, *root, *platform, budget)
+	rep, werr := writeRuntimeTreeFor(f, *dir, *root, *platform, budget)
 	cerr := f.Close()
 	if werr != nil {
 		_ = os.Remove(*out)

@@ -503,17 +503,22 @@ func writeRuntimeTree(w io.Writer, dir, root, platform string, budget TreeLimits
 				return nil, err
 			}
 		} else {
+
 			f, err := os.Open(m.src.abs)
 			if err != nil {
 				return nil, err
 			}
-			n, cerr := io.Copy(zw, f)
+			fh := sha256.New()
+			n, cerr := io.Copy(io.MultiWriter(zw, fh), f)
 			f.Close()
 			if cerr != nil {
 				return nil, cerr
 			}
 			if n != m.src.size {
 				return nil, fmt.Errorf("%s changed size while packing", m.src.rel)
+			}
+			if "sha256:"+hex.EncodeToString(fh.Sum(nil)) != m.src.sha {
+				return nil, fmt.Errorf("%s changed while packing: its bytes no longer hash to its inventory row; pack again once nothing writes to the tree", m.src.rel)
 			}
 		}
 		if pad := size % tarBlockBytes; pad != 0 {

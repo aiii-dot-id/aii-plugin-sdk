@@ -25,6 +25,7 @@ type SessionWorker struct {
 
 	audioIn  *os.File
 	audioOut *os.File
+	audioMu  sync.Mutex
 
 	writeMu sync.Mutex
 	mu      sync.Mutex
@@ -277,8 +278,12 @@ func (w *SessionWorker) Invoke(operation string, argsJSON json.RawMessage, timeo
 }
 
 func (w *SessionWorker) WriteAudio(fr sdk.AudioFrame) error {
+	w.audioMu.Lock()
+	defer w.audioMu.Unlock()
 	return sdk.WriteAudioFrame(w.audioIn, fr)
 }
+
+func (w *SessionWorker) EndInput() error { return w.audioIn.Close() }
 
 func (w *SessionWorker) ReadAudio() (sdk.AudioFrame, error) { return sdk.ReadAudioFrame(w.audioOut) }
 
