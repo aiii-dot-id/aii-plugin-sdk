@@ -123,11 +123,13 @@ type InteractionFilter struct {
 	TurnID      string            `json:"turn_id,omitempty"`
 	SessionID   string            `json:"session_id,omitempty"`
 	WorkSession string            `json:"work_session_id,omitempty"`
-	ProjectID   string            `json:"project_id,omitempty"`
-	RelatedID   string            `json:"related_id,omitempty"`
-	From        string            `json:"from,omitempty"`
-	Until       string            `json:"until,omitempty"`
-	Undated     bool              `json:"undated,omitempty"`
+
+	IncludeDescendants bool   `json:"include_descendants,omitempty"`
+	ProjectID          string `json:"project_id,omitempty"`
+	RelatedID          string `json:"related_id,omitempty"`
+	From               string `json:"from,omitempty"`
+	Until              string `json:"until,omitempty"`
+	Undated            bool   `json:"undated,omitempty"`
 }
 type InteractionQuery struct {
 	Version int               `json:"version"`

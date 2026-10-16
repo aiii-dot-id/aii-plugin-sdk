@@ -315,13 +315,15 @@ Case file shape:
 	rep.verified("artifact", fmt.Sprintf("variant %s: %s (%s, %d bytes) — the bytes the package carries for it, from %s", variant.VariantID, packed.member, packed.hash, packed.size, source))
 	module = packed.path
 
-	out, verr := exec.Command(verifier, "plugin", "verify", pkg).CombinedOutput()
-	first := strings.TrimSpace(firstLineOf(string(out)))
-	if verr != nil || !strings.HasPrefix(first, "VERIFIED T") {
-		rep.fail("verify", fmt.Sprintf("%s: %s", verifier, first))
+	verified, diagnostics, verr := verifyPackageCommand(exec.Command(verifier, "plugin", "verify", pkg), cfg.ID, cfg.Version, rep.packageHash, rep.manifestHash)
+	if diagnostics != "" {
+		rep.note("verifier-diagnostics", diagnostics)
+	}
+	if verr != nil {
+		rep.fail("verify", fmt.Sprintf("%s: %v", verifier, verr))
 		return finish(rep, h)
 	}
-	rep.verified("verify", first+" (aii plugin verify)")
+	rep.verified("verify", verified+" (aii plugin verify)")
 
 	account, aerr := runOracleDescribe(oracle, module)
 	if aerr != nil {

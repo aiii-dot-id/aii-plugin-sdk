@@ -22,9 +22,44 @@ type Remembered struct {
 	Of        string
 	CreatedAt string
 	Scope     string
+	Context   MemoryContext
+	Evidence  []MemoryEvidenceRef
+}
+
+type MemoryContext struct {
+	Applicability     string `json:"applicability"`
+	ProjectID         string `json:"project_id,omitempty"`
+	WorkSessionID     string `json:"work_session_id,omitempty"`
+	SourceIncarnation string `json:"source_incarnation,omitempty"`
+}
+
+type MemoryEvidenceRef struct {
+	ID           string `json:"id"`
+	Sequence     string `json:"sequence"`
+	SHA256       string `json:"sha256"`
+	Incarnation  string `json:"incarnation"`
+	Availability string `json:"availability,omitempty"`
 }
 
 type RememberOption func(args map[string]any)
+
+func MemoryApplicability(value string) RememberOption {
+	return func(args map[string]any) { args["applicability"] = value }
+}
+
+func MemoryEvidence(refs ...MemoryEvidenceRef) RememberOption {
+	return func(args map[string]any) {
+
+		items := make([]map[string]any, len(refs))
+		for i, ref := range refs {
+			items[i] = map[string]any{"id": ref.ID, "sequence": ref.Sequence, "sha256": ref.SHA256, "incarnation": ref.Incarnation}
+			if ref.Availability != "" {
+				items[i]["availability"] = ref.Availability
+			}
+		}
+		args["evidence"] = items
+	}
+}
 
 func Supersedes(id string) RememberOption {
 	return func(args map[string]any) { args["supersedes"] = id }
@@ -46,6 +81,11 @@ func (MemoryClient) Remember(text string, opts ...RememberOption) (Remembered, e
 	out.Of, _ = or.String("of")
 	out.CreatedAt, _ = or.String("created_at")
 	out.Scope, _ = or.String("scope")
+	out.Context, out.Evidence, err = memoryMetadata(or)
+	if err != nil {
+		return out, err
+	}
+
 	if out.ID == "" || out.Outcome == "" {
 		return out, fmt.Errorf("aiiosdk: memory.remember result carries no id and outcome")
 	}
@@ -53,6 +93,14 @@ func (MemoryClient) Remember(text string, opts ...RememberOption) (Remembered, e
 }
 
 type RecallOption func(args map[string]any)
+
+func MemorySelection(value string) RecallOption {
+	return func(args map[string]any) { args["selection"] = value }
+}
+
+func RecentMemories() RecallOption {
+	return func(args map[string]any) { args["recent"] = true }
+}
 
 func Exact() RecallOption { return func(a map[string]any) { a["exact"] = true } }
 
@@ -90,6 +138,8 @@ type RecallHit struct {
 	Class       string
 
 	SupersededBy string
+	Context      MemoryContext
+	Evidence     []MemoryEvidenceRef
 }
 
 type RecallResult struct {
@@ -162,7 +212,47 @@ func (MemoryClient) Recall(query string, opts ...RecallOption) (RecallResult, er
 		hit.Class, _ = h.String("class")
 		hit.Similarity, _ = h.Float("similarity")
 		hit.SupersededBy, _ = h.String("superseded_by")
+		hit.Context, hit.Evidence, err = memoryMetadata(h)
+		if err != nil {
+			return out, err
+		}
+
 		out.Hits = append(out.Hits, hit)
 	}
 	return out, nil
+}
+
+func memoryMetadata(o Object) (MemoryContext, []MemoryEvidenceRef, error) {
+	var c MemoryContext
+	refs := []MemoryEvidenceRef{}
+	if raw := o.Raw("context"); raw != nil {
+		if _, ok := objectMembers(raw); !ok {
+			return c, nil, fmt.Errorf("aiiosdk: memory context is not an object")
+		}
+		v := Object(raw)
+		c.Applicability, _ = v.String("applicability")
+		c.ProjectID, _ = v.String("project_id")
+		c.WorkSessionID, _ = v.String("work_session_id")
+		c.SourceIncarnation, _ = v.String("source_incarnation")
+	}
+	if raw := o.Raw("evidence"); raw != nil {
+		elems, ok := arrayElements(raw)
+		if !ok {
+			return c, nil, fmt.Errorf("aiiosdk: memory evidence is not an array")
+		}
+		for _, raw := range elems {
+			if _, ok := objectMembers(raw); !ok {
+				return c, nil, fmt.Errorf("aiiosdk: memory evidence entry is not an object")
+			}
+			v := Object(raw)
+			var r MemoryEvidenceRef
+			r.ID, _ = v.String("id")
+			r.Sequence, _ = v.String("sequence")
+			r.SHA256, _ = v.String("sha256")
+			r.Incarnation, _ = v.String("incarnation")
+			r.Availability, _ = v.String("availability")
+			refs = append(refs, r)
+		}
+	}
+	return c, refs, nil
 }

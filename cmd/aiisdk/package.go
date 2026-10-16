@@ -39,6 +39,9 @@ plugin (unsigned — trust tier T0):
      envelope) and prints the exact-release quartet.
 
 'aiisdk sign' turns the staged tree into the T1 bundle.
+Optional LICENSE, NOTICE and THIRD_PARTY_LICENSES files in the plugin root
+are included unchanged in install-root and covered by the package hash.
+They must be regular files; symbolic links and other file types are refused.
 `)
 	}
 	if err := fs.Parse(args); err != nil {
@@ -180,6 +183,9 @@ plugin (unsigned — trust tier T0):
 			return fail("validation: %v", err)
 		}
 		install[aiiospkg.ValidationFile] = raw
+	}
+	if err := addLicenseFiles(install, dir); err != nil {
+		return fail("%v", err)
 	}
 
 	manifest, err := aiiospkg.BuildManifest(cfg, methods, install)

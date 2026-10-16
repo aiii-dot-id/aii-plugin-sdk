@@ -99,6 +99,9 @@ func (q InteractionQuery) MarshalJSON() ([]byte, error) {
 		kinds[i] = string(k)
 	}
 	filter := map[string]any{"kinds": kinds, "role": string(f.Role), "turn_id": f.TurnID, "session_id": f.SessionID, "work_session_id": f.WorkSession, "project_id": f.ProjectID, "related_id": f.RelatedID, "from": f.From, "until": f.Until, "undated": f.Undated}
+	if f.IncludeDescendants {
+		filter["include_descendants"] = true
+	}
 	return marshalValue(map[string]any{"version": q.Version, "source": q.Source, "filter": filter, "cursor": q.Cursor, "limit": q.Limit})
 }
 func (r InteractionReadRequest) MarshalJSON() ([]byte, error) {

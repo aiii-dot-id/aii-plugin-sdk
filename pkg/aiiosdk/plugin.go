@@ -37,6 +37,8 @@ type Call struct {
 	Target json.RawMessage
 
 	Arguments json.RawMessage
+
+	HostWorkSession json.RawMessage
 }
 
 func (c Call) Args() Object { return Object(c.Arguments) }
@@ -173,9 +175,10 @@ func (p *Plugin) respond(frame []byte) []byte {
 	}
 
 	call := Call{
-		Operation: operation,
-		Target:    cloneBytes(targetRaw),
-		Arguments: cloneBytes(argsRaw),
+		Operation:       operation,
+		Target:          cloneBytes(targetRaw),
+		Arguments:       cloneBytes(argsRaw),
+		HostWorkSession: cloneBytes(memberByKey(params, "_host_work_session")),
 	}
 	result, err := fn(call)
 	var resp []byte

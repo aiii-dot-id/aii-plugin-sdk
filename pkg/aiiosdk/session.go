@@ -140,7 +140,13 @@ type Control struct {
 	Op   string
 	Args Object
 
+	HostWorkSession json.RawMessage
+
 	reply *controlReply
+}
+
+func (c Control) WorkSession() WorkSession {
+	return (Call{HostWorkSession: c.HostWorkSession}).WorkSession()
 }
 
 type controlReply struct {
@@ -297,8 +303,9 @@ func (s *Session) admitOne(admit SessionAdmit, frame []byte) error {
 	var req struct {
 		ID     json.RawMessage `json:"id"`
 		Params struct {
-			Operation string          `json:"operation"`
-			Arguments json.RawMessage `json:"arguments"`
+			Operation       string          `json:"operation"`
+			Arguments       json.RawMessage `json:"arguments"`
+			HostWorkSession json.RawMessage `json:"_host_work_session"`
 		} `json:"params"`
 	}
 	_ = json.Unmarshal(frame, &req)
@@ -308,7 +315,7 @@ func (s *Session) admitOne(admit SessionAdmit, frame []byte) error {
 	default:
 		return errors.New("too many controls awaiting their answer")
 	}
-	c := &Control{Session: s, Op: req.Params.Operation, Args: Object(req.Params.Arguments), reply: &controlReply{id: req.ID, s: s}}
+	c := &Control{Session: s, Op: req.Params.Operation, Args: Object(req.Params.Arguments), HostWorkSession: req.Params.HostWorkSession, reply: &controlReply{id: req.ID, s: s}}
 
 	admit(c)
 	return nil

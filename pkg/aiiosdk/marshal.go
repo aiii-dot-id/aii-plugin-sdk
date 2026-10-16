@@ -24,6 +24,11 @@ func marshalValue(v any) ([]byte, error) {
 	return appendValue(make([]byte, 0, 64), v, 0)
 }
 
+func ResultSize(value any) (int, error) {
+	raw, err := marshalValue(value)
+	return len(raw), err
+}
+
 func appendValue(out []byte, v any, depth int) ([]byte, error) {
 	if depth > maxMarshalDepth {
 		return nil, errMarshalDepth

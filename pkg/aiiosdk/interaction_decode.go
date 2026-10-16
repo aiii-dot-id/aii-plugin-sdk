@@ -273,7 +273,7 @@ func decodeInteractionValue(raw []byte, out any) error {
 	case *InteractionContentRef:
 		fields = map[string]any{"id": &v.ID, "source": &v.Source, "incarnation": &v.Incarnation, "sha256": &v.SHA256, "bytes": &v.Bytes}
 	case *InteractionFilter:
-		fields = map[string]any{"kinds": &v.Kinds, "role": &v.Role, "turn_id": &v.TurnID, "session_id": &v.SessionID, "work_session_id": &v.WorkSession, "project_id": &v.ProjectID, "related_id": &v.RelatedID, "from": &v.From, "until": &v.Until, "undated": &v.Undated}
+		fields = map[string]any{"include_descendants": &v.IncludeDescendants, "kinds": &v.Kinds, "role": &v.Role, "turn_id": &v.TurnID, "session_id": &v.SessionID, "work_session_id": &v.WorkSession, "project_id": &v.ProjectID, "related_id": &v.RelatedID, "from": &v.From, "until": &v.Until, "undated": &v.Undated}
 	case *InteractionQuery:
 		fields = map[string]any{"version": &v.Version, "source": &v.Source, "filter": &v.Filter, "cursor": &v.Cursor, "limit": &v.Limit}
 	case *InteractionPage:
