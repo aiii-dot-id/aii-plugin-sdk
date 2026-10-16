@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Gmail's own search words, as in its search box: from:, to:, subject:, after:2026/09/01, in:sent, is:unread, a phrase in quotes; absent, every message, newest first"
+    },
+    "max": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 10,
+      "description": "how many messages to answer, at most ten"
+    },
+    "page": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "the next_page an earlier answer gave, to read on with that same query"
+    }
+  },
+  "additionalProperties": false
+}

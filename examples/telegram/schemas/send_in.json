@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "address": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "the chat id from the address book (a number, negative for a group) or @username"
+    },
+    "body": {
+      "type": "string",
+      "maxLength": 4096
+    }
+  },
+  "required": [
+    "address"
+  ],
+  "additionalProperties": false
+}

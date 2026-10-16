@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "method": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "headers": {
+      "type": "object"
+    },
+    "body": {
+      "type": "string"
+    },
+    "recorded": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "description": "the ids of the previous answer's arrivals the host holds; sent only to an adapter that says it acknowledges"
+    }
+  },
+  "additionalProperties": false
+}

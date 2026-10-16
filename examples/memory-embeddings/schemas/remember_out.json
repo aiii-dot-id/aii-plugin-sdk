@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^m:[0-9]+$"
+    },
+    "dimensions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "model": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "dimensions",
+    "model"
+  ]
+}

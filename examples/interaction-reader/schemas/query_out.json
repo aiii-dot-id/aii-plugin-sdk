@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "incarnation": {
+      "type": "string"
+    },
+    "fingerprint": {
+      "type": "string"
+    },
+    "next_cursor": {
+      "type": "string"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "rows",
+    "source",
+    "incarnation",
+    "fingerprint",
+    "next_cursor"
+  ],
+  "additionalProperties": false
+}

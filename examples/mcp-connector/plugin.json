@@ -1,0 +1,68 @@
+{
+  "id": "com.aiii.examples.mcp-connector",
+  "version": "0.1.0",
+  "plugin_family": "tool_bridge",
+  "title": "mcp-connector",
+  "description": "An MCP connector built with the kit: publishes a server's tools at run time and forwards their calls.",
+  "interface": {
+    "id": "mcp.bridge",
+    "version": 1
+  },
+  "capability_envelope": [
+    "tools.publish",
+    "net.outbound:mcp.example.test:443"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "tools.publish",
+        "net.outbound:mcp.example.test:443"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "tools.publish",
+        "net.outbound:mcp.example.test:443"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "tools.publish",
+        "net.outbound:mcp.example.test:443"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "server_url",
+      "type": "string",
+      "title": "Server URL",
+      "description": "the MCP server's HTTP endpoint (JSON-RPC over POST)",
+      "required": true
+    },
+    {
+      "key": "token",
+      "type": "secret",
+      "title": "Server token",
+      "description": "the credential handle cited on every call"
+    }
+  ]
+}

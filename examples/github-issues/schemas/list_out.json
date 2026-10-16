@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "http_status": {
+      "type": "integer"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "effect": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "http_status",
+    "issues"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "matches": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "score"
+        ]
+      }
+    },
+    "scanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "model": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "matches",
+    "scanned"
+  ]
+}

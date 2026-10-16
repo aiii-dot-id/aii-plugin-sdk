@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "drafted"
+      ],
+      "description": "drafted: saved in Drafts, sent to no one"
+    },
+    "draft_id": {
+      "type": "string",
+      "description": "the draft's id in Gmail"
+    },
+    "message_id": {
+      "type": "string",
+      "description": "the id of the draft's message"
+    },
+    "thread_id": {
+      "type": "string"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "delivery": {
+      "type": "string",
+      "description": "what reached anyone: nothing"
+    }
+  },
+  "required": [
+    "outcome",
+    "draft_id",
+    "message_id",
+    "thread_id",
+    "labels",
+    "delivery"
+  ],
+  "additionalProperties": false
+}
