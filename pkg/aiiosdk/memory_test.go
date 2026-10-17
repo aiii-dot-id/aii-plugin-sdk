@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-// The memory client against the broker's own result shapes
-// (aii-os internal/broker/memory.go): what Remember sends and reads,
-// what Recall sends and reads, and how a denial and a detail miss
-// travel.
-
 func TestRememberSendsTheTextAndReadsTheOutcome(t *testing.T) {
 	var gotParams []byte
 	withHost(t, func(params []byte) ([]byte, error) {
@@ -101,5 +96,25 @@ func TestMemoryOutsideGuest(t *testing.T) {
 	}
 	if _, err := Memory.Recall("x"); !errors.Is(err, ErrNotInGuest) {
 		t.Fatalf("want ErrNotInGuest, got %v", err)
+	}
+}
+
+func TestAnyWordsIsExplicitOnTheMemoryWire(t *testing.T) {
+	var sent string
+	withHost(t, func(params []byte) ([]byte, error) {
+		sent = string(params)
+		return []byte(`{"status":"succeeded","success":true,"operation_result":{"hits":[],"matched":0,"shown":0,"status":"found_nothing"}}`), nil
+	})
+	if _, e := Memory.Recall("compiler schema", AnyWords(), Limit(5)); e != nil {
+		t.Fatal(e)
+	}
+	if !strings.Contains(sent, `"any_words":true`) {
+		t.Fatal(sent)
+	}
+	if _, e := Memory.Recall("compiler schema"); e != nil {
+		t.Fatal(e)
+	}
+	if strings.Contains(sent, `"any_words"`) {
+		t.Fatal("default query changed", sent)
 	}
 }

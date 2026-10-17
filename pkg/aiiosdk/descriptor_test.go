@@ -1,10 +1,5 @@
 package aiiosdk
 
-// Shape tests for the describe seam: the descriptor JSON and the manifest
-// interfaces fragment, asserted against a MIRROR of the runtime's
-// reader types (byte-copied shape, origin noted below) — this is what
-// "tested for shape, not yet wired to packaging" means concretely.
-
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,10 +8,6 @@ import (
 	"testing"
 )
 
-// manifestInterfaceDecl mirrors the runtime's InterfaceDecl — the
-// required members of one interfaces.core declaration. ORIGIN
-// (byte-copied shape, not imported — the independence ruling):
-// aii-os internal/packagefmt/manifest.go:112-118.
 type manifestInterfaceDecl struct {
 	ID         string   `json:"id"`
 	Version    int      `json:"version"`
@@ -56,9 +47,7 @@ func TestDescriptorsJSON(t *testing.T) {
 	if len(list) != 3 {
 		t.Fatalf("want every HANDLED operation covered, got %d", len(list))
 	}
-	// Sorted by id, and the six plugin.toml keys present on each
-	// — including the undescribed focus.get, which
-	// gets the minimal descriptor.
+
 	var ids []string
 	for _, d := range list {
 		for _, key := range []string{"id", "summary", "input", "output", "effects", "capabilities"} {
@@ -78,7 +67,7 @@ func TestDescriptorsJSON(t *testing.T) {
 	if strings.Join(ids, ",") != "focus.echo,focus.get,focus.set" {
 		t.Fatalf("not sorted by id: %v", ids)
 	}
-	// Deterministic emission: same bytes twice.
+
 	raw2, _ := p.DescriptorsJSON()
 	if string(raw) != string(raw2) {
 		t.Fatalf("emission must be deterministic")
@@ -107,17 +96,14 @@ func TestManifestInterfacesShape(t *testing.T) {
 	if strings.Join(decl.Methods, ",") != "focus.echo,focus.get,focus.set" {
 		t.Fatalf("methods must be the sorted handled operations: %v", decl.Methods)
 	}
-	// schema_hash is "sha256:" + hex over the DescriptorsJSON bytes —
-	// the contract: the packaged schema file IS those bytes, hashed
-	// the way the runtime's builder hashes install files
-	// (packagetest.go:87-92).
+
 	schemaBytes, _ := p.DescriptorsJSON()
 	sum := sha256.Sum256(schemaBytes)
 	want := "sha256:" + hex.EncodeToString(sum[:])
 	if decl.SchemaHash != want {
 		t.Fatalf("schema_hash:\n got %s\nwant %s", decl.SchemaHash, want)
 	}
-	// The exact member names of the runtime's reader, nothing extra.
+
 	var loose []map[string]json.RawMessage
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &top); err != nil {
@@ -190,4 +176,34 @@ func TestDescriptorGuards(t *testing.T) {
 		p.Describe("op", Descriptor{})
 		p.Describe("op", Descriptor{})
 	})
+}
+
+func TestContextDescriptorIsExplicitAndSignedInInterfaceHash(t *testing.T) {
+	p := New("org.example.context")
+	p.Handle("context", func(Call) (any, error) { return nil, nil })
+	d := Descriptor{Summary: "Read relevant local context", Effects: EffectsReadInternal, Capabilities: []string{}, Input: "schemas/context_in.json", Output: "schemas/context_out.json", MaxResultBytes: 4096}
+	p.Describe("context", d)
+	before, _ := p.DescriptorsJSON()
+	if strings.Contains(string(before), `"context":`) {
+		t.Fatal("optional marker emitted for ordinary operation")
+	}
+	d.Context = true
+	p = New("org.example.context")
+	p.Handle("context", func(Call) (any, error) { return nil, nil })
+	p.Describe("context", d)
+	after, err := p.DescriptorsJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(after), `"context":true`) || string(after) == string(before) {
+		t.Fatal(string(after))
+	}
+	frag, err := p.manifestInterfaces("org.example.context", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(after)
+	if !strings.Contains(string(frag), "sha256:"+hex.EncodeToString(sum[:])) {
+		t.Fatal("context marker escaped interface hash")
+	}
 }

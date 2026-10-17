@@ -7,17 +7,6 @@ import (
 	"testing"
 )
 
-// THE EMITTED BYTES ARE THE CONTRACT, NOT THE STRUCT. DescriptorsJSON
-// splices its own JSON so the library stays runnable inside a
-// wasm-unknown guest, and a hand-spliced serializer silently drops any
-// field nobody remembered to add to it. Four had been dropped:
-// operator_confirms and the three discovery hints. An author could
-// therefore declare an operation as needing the operator's confirmation,
-// see it in Descriptors(), pass their own assertions, and ship a package
-// the host dispatches without ever asking anyone.
-//
-// It reads the EMITTED JSON on purpose: a direct-struct assertion passes
-// on the defect.
 func TestConfirmationSurvivesExecutableDescriptorSerialization(t *testing.T) {
 	p := New("test")
 	for _, name := range []string{"enroll", "remove", "reset", "list"} {
@@ -48,10 +37,6 @@ func TestConfirmationSurvivesExecutableDescriptorSerialization(t *testing.T) {
 	}
 }
 
-// AND THE NEXT FIELD MUST FAIL LOUDLY INSTEAD OF DISAPPEARING. Every
-// json tag on Descriptor is a field the host parses; with all of them
-// set, every one has to reach the bytes. This is the check that would
-// have caught the four, and it is the one that catches the fifth.
 func TestEveryDescriptorFieldReachesTheEmittedJSON(t *testing.T) {
 	full := Descriptor{
 		Summary:          "every field set",
@@ -62,6 +47,7 @@ func TestEveryDescriptorFieldReachesTheEmittedJSON(t *testing.T) {
 		MaxResultBytes:   4096,
 		Family:           "memory",
 		Primary:          true,
+		Context:          true,
 		Keywords:         []string{"recall"},
 		Examples:         []string{`{"q":"x"}`},
 		OperatorConfirms: true,

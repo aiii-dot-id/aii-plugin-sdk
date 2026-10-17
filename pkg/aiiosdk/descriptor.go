@@ -36,6 +36,8 @@ type Descriptor struct {
 
 	Primary bool `json:"primary,omitempty"`
 
+	Context bool `json:"context,omitempty"`
+
 	OperatorConfirms bool `json:"operator_confirms,omitempty"`
 }
 
@@ -159,6 +161,9 @@ func (p *Plugin) DescriptorsJSON() ([]byte, error) {
 		}
 		if d.Primary {
 			out = append(out, `,"primary":true`...)
+		}
+		if d.Context {
+			out = append(out, `,"context":true`...)
 		}
 		out = append(out, '}')
 	}

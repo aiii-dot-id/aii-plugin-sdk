@@ -102,6 +102,8 @@ func RecentMemories() RecallOption {
 	return func(args map[string]any) { args["recent"] = true }
 }
 
+func AnyWords() RecallOption { return func(a map[string]any) { a["any_words"] = true } }
+
 func Exact() RecallOption { return func(a map[string]any) { a["exact"] = true } }
 
 func Since(t time.Time) RecallOption {
@@ -145,6 +147,8 @@ type RecallHit struct {
 type RecallResult struct {
 	Hits []RecallHit
 
+	SelectionContext *MemorySelectionContext
+
 	Status    string
 	Matched   int
 	Shown     int
@@ -154,6 +158,13 @@ type RecallResult struct {
 	Meaning       string
 	MeaningDetail string
 	MeaningBasis  string
+}
+
+type MemorySelectionContext struct {
+	Selection     string `json:"selection"`
+	ProjectID     string `json:"project_id,omitempty"`
+	WorkSessionID string `json:"work_session_id,omitempty"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 func (MemoryClient) Recall(query string, opts ...RecallOption) (RecallResult, error) {
@@ -166,11 +177,21 @@ func (MemoryClient) Recall(query string, opts ...RecallOption) (RecallResult, er
 	if err != nil {
 		if oe, ok := asOperationError(err); ok && oe.ReasonCode == "MEMORY_NOT_FOUND" {
 			out.Status = "found_nothing"
+			if res != nil {
+				out.SelectionContext, err = memorySelectionMetadata(Object(res.OperationResult))
+				if err != nil {
+					return out, err
+				}
+			}
 			return out, nil
 		}
 		return out, err
 	}
 	or := Object(res.OperationResult)
+	out.SelectionContext, err = memorySelectionMetadata(or)
+	if err != nil {
+		return out, err
+	}
 	out.Status, _ = or.String("status")
 	if n, ok := or.Int("matched"); ok {
 		out.Matched = int(n)
@@ -220,6 +241,35 @@ func (MemoryClient) Recall(query string, opts ...RecallOption) (RecallResult, er
 		out.Hits = append(out.Hits, hit)
 	}
 	return out, nil
+}
+
+func memorySelectionMetadata(o Object) (*MemorySelectionContext, error) {
+	raw := o.Raw("selection_context")
+	if raw == nil {
+		return nil, nil
+	}
+	if _, ok := objectMembers(raw); !ok {
+		return nil, fmt.Errorf("aiiosdk: memory selection context is not an object")
+	}
+	v := Object(raw)
+	c := &MemorySelectionContext{}
+	for _, field := range []struct {
+		name string
+		out  *string
+	}{
+		{"selection", &c.Selection}, {"project_id", &c.ProjectID},
+		{"work_session_id", &c.WorkSessionID}, {"reason", &c.Reason},
+	} {
+		if field.name != "selection" && !v.Has(field.name) {
+			continue
+		}
+		s, ok := v.String(field.name)
+		if !ok {
+			return nil, fmt.Errorf("aiiosdk: memory selection context %s is not a string", field.name)
+		}
+		*field.out = s
+	}
+	return c, nil
 }
 
 func memoryMetadata(o Object) (MemoryContext, []MemoryEvidenceRef, error) {
