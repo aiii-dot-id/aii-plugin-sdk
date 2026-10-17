@@ -1,0 +1,9 @@
+{
+  "name": "receive is never answered: mail arrives by push and by the schedule",
+  "operation": "receive",
+  "arguments": {},
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_NOT_SUPPORTED"
+  }
+}

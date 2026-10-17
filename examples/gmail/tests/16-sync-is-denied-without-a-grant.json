@@ -1,0 +1,14 @@
+{
+  "name": "the scheduled sync is refused for want of storage before it asks Gmail anything",
+  "operation": "gmail.sync",
+  "arguments": {
+    "recorded": []
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

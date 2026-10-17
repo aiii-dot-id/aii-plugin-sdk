@@ -1,0 +1,11 @@
+{
+  "name": "remember stores a second text as m:2",
+  "operation": "memory.remember",
+  "arguments": {
+    "text": "the sweep runs on file events not a timer"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"id\":\"m:2\""
+  }
+}

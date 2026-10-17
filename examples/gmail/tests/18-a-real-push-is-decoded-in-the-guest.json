@@ -1,0 +1,15 @@
+{
+  "name": "a Pub/Sub push is decoded by the wasm guest: it reaches the settings check instead of being ignored as not a push",
+  "operation": "gmail.notify",
+  "arguments": {
+    "method": "POST",
+    "path": "notify",
+    "query": "",
+    "headers": {},
+    "body": "{\"message\": {\"data\": \"eyJlbWFpbEFkZHJlc3MiOiJzZXZAYWlpaS5pZCIsImhpc3RvcnlJZCI6IjEwMSJ9\", \"messageId\": \"1\"}, \"subscription\": \"projects/aii-mail/subscriptions/gmail-push\"}"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

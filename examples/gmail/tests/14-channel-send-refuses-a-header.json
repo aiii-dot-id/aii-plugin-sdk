@@ -1,0 +1,12 @@
+{
+  "name": "a channel send to something that is not one plain address is refused before any call",
+  "operation": "send",
+  "arguments": {
+    "address": "recipient@example.com\r\nBcc: attacker@evil.example",
+    "body": "hi"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

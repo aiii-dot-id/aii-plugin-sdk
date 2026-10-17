@@ -1,0 +1,14 @@
+{
+  "name": "a published tool's call is forwarded and denied without a grant",
+  "operation": "mcp.list_files",
+  "arguments": {
+    "path": "/"
+  },
+  "settings": {
+    "server_url": "https://mcp.example.test/rpc"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

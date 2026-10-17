@@ -1,0 +1,11 @@
+{
+  "name": "recall scans the one chunk the file now is",
+  "operation": "document.recall",
+  "arguments": {
+    "query": "ledger"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"scanned\":1"
+  }
+}

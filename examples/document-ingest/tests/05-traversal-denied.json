@@ -1,0 +1,11 @@
+{
+  "name": "a path that leaves the sandbox is refused before anything is opened",
+  "operation": "document.ingest",
+  "arguments": {
+    "path": "../secret.txt"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "FS_OUTSIDE_SANDBOX"
+  }
+}

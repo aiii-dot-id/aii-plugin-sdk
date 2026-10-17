@@ -1,0 +1,19 @@
+{
+  "name": "a create at a time the clock skips is refused by the zone's own rules, before any call",
+  "operation": "calendar.create",
+  "operator_act": true,
+  "arguments": {
+    "title": "Dentist",
+    "start": "2026-03-08T02:30",
+    "end": "2026-03-08T03:30",
+    "time_zone": "America/New_York",
+    "notify": "none"
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "a call without a topic is not an event",
+  "operation": "log.event",
+  "arguments": {},
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

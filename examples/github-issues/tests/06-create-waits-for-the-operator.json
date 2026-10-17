@@ -1,0 +1,15 @@
+{
+  "name": "creating an issue the operator has not confirmed is refused before anything is asked",
+  "operation": "issues.create",
+  "arguments": {
+    "title": "The build breaks",
+    "body": "steps"
+  },
+  "settings": {
+    "repo": "golang/go"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

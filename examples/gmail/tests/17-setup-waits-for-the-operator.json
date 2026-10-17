@@ -1,0 +1,14 @@
+{
+  "name": "a setup the operator has not confirmed is refused before anything is created",
+  "operation": "gmail.setup",
+  "arguments": {},
+  "settings": {
+    "google": "google-work",
+    "topic": "projects/aii-mail/topics/gmail",
+    "push_account": "aii-gmail-push@aii-mail.iam.gserviceaccount.com"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

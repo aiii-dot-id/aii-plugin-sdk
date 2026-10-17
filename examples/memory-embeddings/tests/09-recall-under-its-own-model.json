@@ -1,0 +1,14 @@
+{
+  "name": "and is found again under the model that stored it",
+  "operation": "memory.recall",
+  "arguments": {
+    "query": "the ledger is the only identity truth"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": [
+      "the ledger is the only identity truth",
+      "\"skipped_other_model\":0"
+    ]
+  }
+}

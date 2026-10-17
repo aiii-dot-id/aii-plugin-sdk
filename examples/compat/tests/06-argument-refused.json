@@ -1,0 +1,11 @@
+{
+  "name": "a remember with no text is refused before any host call",
+  "operation": "remember",
+  "arguments": {
+    "text": ""
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

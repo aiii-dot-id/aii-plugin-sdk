@@ -1,0 +1,14 @@
+{
+  "name": "a read of what is not a message's id is refused before any call",
+  "operation": "gmail.read",
+  "arguments": {
+    "message_id": "../drafts"
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

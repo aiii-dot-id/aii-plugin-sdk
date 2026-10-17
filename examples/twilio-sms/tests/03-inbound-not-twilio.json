@@ -1,0 +1,14 @@
+{
+  "name": "a body that is not a Twilio message is refused",
+  "operation": "sms.inbound",
+  "arguments": {
+    "method": "POST",
+    "path": "sms",
+    "query": "",
+    "body": "hello"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}
