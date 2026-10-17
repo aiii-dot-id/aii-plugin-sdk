@@ -14,6 +14,13 @@ jobs:
       GOFLAGS: "-p=4"
     steps:
       - uses: actions/checkout@v4
+      # Keep gofmt's input stable on Windows, where Git otherwise may check
+      # out Go files with CRLF and make every correctly formatted file appear
+      # dirty to gofmt.
+      - shell: bash
+        run: |
+          git config core.autocrlf false
+          git checkout-index --force --all
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
