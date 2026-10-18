@@ -1,0 +1,16 @@
+{
+  "name": "free time is denied without a grant",
+  "operation": "calendar.availability",
+  "arguments": {
+    "from": "2026-10-02T09:00",
+    "to": "2026-10-02T17:00",
+    "minutes": 30
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

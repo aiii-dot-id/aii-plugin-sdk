@@ -1,0 +1,70 @@
+{
+  "id": "com.aiii.examples.github-issues",
+  "version": "0.1.0",
+  "plugin_family": "tool_bridge",
+  "title": "github-issues",
+  "description": "A GitHub issues connector built with the kit: list, create, and consume a streamed reply.",
+  "interface": {
+    "id": "github.issues",
+    "version": 1
+  },
+  "capability_envelope": [
+    "net.outbound:api.github.com:443"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-wasm",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.github.com:443"
+      ]
+    },
+    {
+      "variant_id": "macos-arm64-wasm",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.github.com:443"
+      ]
+    },
+    {
+      "variant_id": "windows-x86_64-wasm",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "wasm_component",
+      "admission_profile": "wasm_sandbox",
+      "variant_capabilities": [
+        "net.outbound:api.github.com:443"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "repo",
+      "type": "string",
+      "title": "Repository",
+      "description": "owner/name of the repository this connector works in",
+      "required": true
+    },
+    {
+      "key": "token",
+      "type": "secret",
+      "title": "GitHub token",
+      "description": "the credential handle the connector cites (public reads need none): a GitHub token, or an oauth2 profile connected on the Plugins page",
+      "oauth": {
+        "provider": "github",
+        "services": [
+          "issues"
+        ]
+      }
+    }
+  ]
+}

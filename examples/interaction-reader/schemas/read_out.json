@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "properties": {
+    "data_b64": {
+      "type": "string"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "eof": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "data_b64",
+    "bytes",
+    "offset",
+    "size",
+    "eof"
+  ],
+  "additionalProperties": false
+}

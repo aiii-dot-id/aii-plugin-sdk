@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "the event's id on this calendar, derived from the intended event: the same create asked again names the same id"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "created",
+        "created_earlier"
+      ],
+      "description": "created: this call made it; created_earlier: an earlier attempt of this same create made it, and this call made nothing"
+    },
+    "etag": {
+      "type": "string",
+      "description": "the event's version, which an update is bound to"
+    },
+    "html_link": {
+      "type": "string"
+    },
+    "start": {
+      "type": "string"
+    },
+    "end": {
+      "type": "string"
+    },
+    "time_zone": {
+      "type": "string"
+    },
+    "notifications": {
+      "type": "string",
+      "description": "what Google was asked to email"
+    }
+  },
+  "required": [
+    "event_id",
+    "outcome",
+    "start",
+    "end",
+    "time_zone",
+    "notifications"
+  ],
+  "additionalProperties": false
+}

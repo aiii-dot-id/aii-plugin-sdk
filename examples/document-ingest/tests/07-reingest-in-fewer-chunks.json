@@ -1,0 +1,17 @@
+{
+  "name": "a file ingested again in fewer chunks leaves none of the old ones behind",
+  "operation": "document.ingest",
+  "arguments": {
+    "path": "notes.md"
+  },
+  "settings": {
+    "chunk_chars": 4000
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": [
+      "\"chunks\":1",
+      "\"removed\":2"
+    ]
+  }
+}

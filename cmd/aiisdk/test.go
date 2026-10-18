@@ -1,0 +1,721 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/aiii-dot-id/aii-plugin-sdk/internal/workerdrive"
+	"github.com/aiii-dot-id/aii-plugin-sdk/pkg/aiiospkg"
+)
+
+const (
+	exitPass       = 0
+	exitFail       = 1
+	exitIncomplete = 3
+)
+
+type grantList []string
+
+func (g *grantList) String() string     { return strings.Join(*g, ",") }
+func (g *grantList) Set(v string) error { *g = append(*g, v); return nil }
+
+type testCase struct {
+	Name      string          `json:"name"`
+	Operation string          `json:"operation"`
+	Arguments json.RawMessage `json:"arguments"`
+
+	Settings map[string]json.RawMessage `json:"settings"`
+
+	EmbeddingsModel string `json:"embeddings_model"`
+
+	OperatorAct bool `json:"operator_act"`
+
+	UnconfirmedByDesign *string `json:"unconfirmed_by_design"`
+	Expect              struct {
+		Status         string       `json:"status"`
+		ReasonCode     string       `json:"reason_code"`
+		ResultContains containsList `json:"result_contains"`
+	} `json:"expect"`
+}
+
+type checkEntry struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Class  string `json:"class"`
+	Detail string `json:"detail,omitempty"`
+	Next   string `json:"next,omitempty"`
+}
+
+type report struct {
+	entries          []checkEntry
+	fails            int
+	checks           int
+	cases            int
+	id, version      string
+	reportPath       string
+	incompletePrereq bool
+
+	unrun        int
+	packageHash  string
+	manifestHash string
+	boundaryDone bool
+}
+
+func (r *report) add(name, status, class, detail, next string) {
+	r.entries = append(r.entries, checkEntry{Name: name, Status: status, Class: class, Detail: detail, Next: next})
+}
+
+func (r *report) pass(what, detail string) { r.checks++; r.add(what, "pass", "local", detail, "") }
+func (r *report) verified(what, detail string) {
+	r.checks++
+	r.add(what, "pass", "locally_verified", detail, "")
+}
+func (r *report) fail(what, detail string) {
+	r.checks++
+	r.fails++
+	r.add(what, "fail", "local", detail, "")
+}
+func (r *report) note(what, detail string)         { r.add(what, "note", "local", detail, "") }
+func (r *report) notRun(what, detail, next string) { r.add(what, "not_run", "host", detail, next) }
+func (r *report) incomplete(what, detail, next string) {
+	r.add(what, "incomplete", "host", detail, next)
+}
+
+func (r *report) incompleteLocal(what, detail, next string) {
+	r.unrun++
+	r.add(what, "incomplete", "local", detail, next)
+}
+
+type qualEnvelope struct {
+	Tool    string       `json:"tool"`
+	Command string       `json:"command"`
+	Schema  string       `json:"schema"`
+	ID      string       `json:"id"`
+	Version string       `json:"version"`
+	Result  string       `json:"result"`
+	Checks  []checkEntry `json:"checks"`
+}
+
+func (r *report) result() (string, int) {
+	switch {
+	case r.incompletePrereq:
+		return "incomplete", exitIncomplete
+	case r.fails > 0:
+		return "fail", exitFail
+	case r.unrun > 0:
+		return "incomplete", exitIncomplete
+	default:
+		return "pass", exitPass
+	}
+}
+
+func (r *report) envelope() qualEnvelope {
+	res, _ := r.result()
+	return qualEnvelope{Tool: "aiisdk", Command: "test", Schema: "aiisdk.qual.v1", ID: r.id, Version: r.version, Result: res, Checks: r.entries}
+}
+
+func stagedSigningInputs(dir string, cfg *aiiospkg.AuthorConfig) (packageHash, manifestHash string) {
+	tree, err := aiiospkg.ReadTree(stageDir(dir, cfg))
+	if err != nil {
+		return "", ""
+	}
+	manifest, ok := tree.Files["manifest.json"]
+	if !ok {
+		return "", ""
+	}
+	mh, err := aiiospkg.ManifestHash(manifest)
+	if err != nil {
+		return aiiospkg.PackageHash(tree.InstallFiles()), ""
+	}
+	return aiiospkg.PackageHash(tree.InstallFiles()), mh
+}
+
+func appendBoundaryChecks(rep *report, packageHash, manifestHash string) {
+	if packageHash != "" && manifestHash != "" {
+		rep.verified("signing-inputs", fmt.Sprintf("package_hash=%s manifest_hash=%s (manifest_hash source: the kit's canonicalizer, aiiospkg.ManifestHash)", packageHash, manifestHash))
+	}
+	rep.incomplete("manifest_hash-consumer",
+		"the signing consumer (aii-devsign, built from the host's source) may canonicalize manifest_hash differently and was not consulted",
+		"run 'aii-devsign -payload-out' on the staged manifest.json, read manifest_hash back, and compare \u2014 fail closed on mismatch")
+	rep.notRun("signature",
+		"this command proves the plugin locally and does not sign it",
+		"run 'aiisdk sign' to mint the T1-under-dev-root signature \u2014 still local evidence, never a host receipt")
+	rep.notRun("host-activation",
+		"activation is a host-side act; nothing here activates on any host",
+		"activate on the host, then read the result back through the host's verified channel")
+	rep.notRun("host-receipt",
+		"a host receipt is host-produced data; this command never writes one",
+		"obtain the receipt from the host after activation \u2014 only host-produced data is deployment evidence")
+}
+
+func cmdTest(args []string) int {
+	fs := flag.NewFlagSet("aiisdk test", flag.ExitOnError)
+	var grants grantList
+	fs.Var(&grants, "grant", "a grant for this run: kv, memory, voice, embeddings, tools, net.outbound:host[:port|:*], net.local:<address|range|name>[:port|:*] for a device on your own network, or files=<dir> for the identity's sandbox (repeatable)")
+	var settings grantList
+	fs.Var(&settings, "setting", "an operator value for a setting plugin.json declares: key=value (repeatable; a case file's settings override it)")
+	cases := fs.String("cases", "tests", "directory of case files, one JSON object per file")
+	timeout := fs.Duration("timeout", 30*time.Second, "deadline per call and per worker start")
+	skipBuild := fs.Bool("skip-build", false, "use dist/<id>.wasm as it is instead of running aiisdk build")
+	reportFlag := fs.String("report", "", "also write the qualification report as JSON (schema aiisdk.qual.v1) to this path")
+	native := fs.Bool("native", false, "run this machine's native variant (its carrier, as the host starts it) instead of the wasm module; the default when the plugin declares no wasm variant")
+	modelsDir := fs.String("models-dir", os.Getenv("AII_MODELS_DIR"), "for a native plugin: the directory holding its declared models, handed to it as AII_MODELS_DIR as the host does (default $AII_MODELS_DIR); nothing is fetched")
+	runtimeRoot := fs.String("runtime-root", os.Getenv("AII_RUNTIME_ROOT"), "for a native plugin: its installed runtime tree, handed to it as AII_RUNTIME_ROOT as the host does (default $AII_RUNTIME_ROOT); nothing is fetched")
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage: aiisdk test [-grant <g>]... [-cases dir] [-timeout d] [-skip-build]
+
+Proves the plugin in the current directory on this machine:
+
+  build      aiisdk build (TinyGo, the pinned recipe)
+  package    aiisdk package (the canonical .aiiospkg)
+  artifact   the bytes the package carries for the wasm variant this run
+             reports on — its own artifact when it names one, else the
+             built module — held to the manifest's artifact_hash; every
+             step below runs these bytes
+  verify     aii plugin verify, the host's own verifier
+  account    the module's aiii-plugin-describe equals the packaged descriptor
+  admission  the worker's ready banner (bbb_protocol_version=2)
+  cases      every tests/*.json case, driven over real BBB frames
+  confirmation  every write.external operation declares operator_confirms,
+             or a case marks it "unconfirmed_by_design" with the reason
+             (a channel adapter's send is the host's, and exempt)
+  hostile    an undeclared operation is answered, never a crash
+  exit       a clean stdin-EOF exit
+
+Host calls the guest makes during a case are answered by a stand-in
+host under the grants you name; its storage dies with the run and its
+observations are printed as such — they are not receipts, and no
+receipt is written by this command.
+
+Every case's arguments carry the host's clock, _host_now_ms, as the host
+injects it on every call; a case that names its own keeps it.
+
+Oracles: AII_OS_BIN (a directory holding aii-plugin-worker or aii), or
+aii-plugin-worker and aii on PATH. Missing prerequisites end the run
+as INCOMPLETE (exit 3), not as a pass. Exit 0 pass, 1 fail.
+
+Checks (validation_file in plugin.json): after the cases, each check of
+validation.json is sent on its lane and judged as the host judges it, its
+time measured against its own within_ms; every check is reported with how
+it ended, the cosine reached and the time taken, and the run passes only
+if every one passes; one this kit cannot run here (a recording at another
+rate than the engine answers) leaves the run INCOMPLETE (exit 3). A
+native plugin (-native, or no wasm variant declared) is run as the host
+runs it: its carrier for this machine is started with exactly
+SEV_PLUGIN_SOCKET, SEV_PLUGIN_ID, AII_MODELS_DIR (-models-dir) and
+AII_RUNTIME_ROOT (-runtime-root), its ready line (with sdk=) is awaited,
+and its checks run; nothing is fetched, and the carrier's own probe is
+not a check.
+
+Case file shape:
+  {"name": "…", "operation": "core.echo", "arguments": {…},
+   "expect": {"status": "succeeded", "reason_code": "", "result_contains": "" | ["…", "…"]}}
+  "operator_act": true stamps the arguments as a confirmed act's dispatch;
+  "embeddings_model": "<name>" has the embeddings stand-in answer as that
+  model for the case (what a plugin sees when the operator changes it);
+  "unconfirmed_by_design": "<why>" marks an external write that no operator
+  confirms on purpose.
+`)
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return fail("%v", err)
+	}
+	cfg, err := loadConfigHere(dir)
+	if err != nil {
+		return fail("%v", err)
+	}
+	fmt.Printf("aiisdk test: %s %s\n", cfg.ID, cfg.Version)
+	rep := &report{id: cfg.ID, version: cfg.Version, reportPath: *reportFlag}
+	if *native || !declaresWasm(cfg) {
+		h, err := newHarness(grants, cfg.Settings, settings)
+		if err != nil {
+			return fail("%v", err)
+		}
+		h.pluginID = cfg.ID
+		return testNative(dir, cfg, rep, h, *timeout, *modelsDir, *runtimeRoot)
+	}
+
+	var missing []string
+	tinygo := ""
+	if !*skipBuild {
+		if tg, terr := findTinygo(); terr != nil {
+			missing = append(missing, terr.Error())
+		} else {
+			tinygo = tg
+		}
+	}
+	oracle := describeOracle()
+	if oracle == nil {
+		missing = append(missing, "no worker oracle: set AII_OS_BIN to a directory holding aii-plugin-worker (or aii), or put aii-plugin-worker on PATH")
+	}
+	verifier := findVerifier()
+	if verifier == "" {
+		missing = append(missing, "no verifier: set AII_OS_BIN to a directory holding aii, or put aii on PATH")
+	}
+	if len(missing) > 0 {
+		for _, m := range missing {
+			rep.incompleteLocal("prerequisite", m, "install the missing tool or point AII_OS_BIN at it, then re-run")
+		}
+		rep.incompletePrereq = true
+		return finish(rep, nil)
+	}
+	fmt.Printf("  pins: %s · %s · kit %s · oracle %s · verifier %s\n", tinygoVersion(tinygo), runtime.Version(), kitRevision(), strings.Join(oracle, " "), verifier)
+	var h *harness
+	if h, err = newHarness(grants, cfg.Settings, settings); err != nil {
+		return fail("%v", err)
+	}
+	h.pluginID = cfg.ID
+
+	module := wasmPath(dir, cfg)
+	if *skipBuild {
+		if fi, err := os.Stat(module); err != nil || fi.Size() == 0 {
+			rep.fail("build", fmt.Sprintf("-skip-build, and no module at %s", module))
+			return finish(rep, h)
+		}
+		rep.pass("build", fmt.Sprintf("%s (as built; -skip-build)", module))
+	} else if code := cmdBuild(nil); code != 0 {
+		rep.fail("build", "aiisdk build failed (above)")
+		return finish(rep, h)
+	} else {
+		fi, _ := os.Stat(module)
+		rep.pass("build", fmt.Sprintf("%s (%d bytes)", module, fi.Size()))
+	}
+	if code := cmdPackage(nil); code != 0 {
+		rep.fail("package", "aiisdk package failed (above)")
+		return finish(rep, h)
+	}
+	pkg := filepath.Join(dir, "dist", cfg.ID+"-"+cfg.Version+".aiiospkg")
+	rep.pass("package", pkg)
+	rep.packageHash, rep.manifestHash = stagedSigningInputs(dir, cfg)
+
+	variant := wasmVariant(cfg)
+	packed, perr := packagedArtifact(dir, cfg, variant.VariantID)
+	if perr != nil {
+		rep.fail("artifact", perr.Error())
+		return finish(rep, h)
+	}
+	source := "the module aiisdk build produced (" + filepath.ToSlash(filepath.Join("dist", cfg.ID+".wasm")) + ")"
+	if variant.Artifact != "" {
+		source = "its own artifact, " + variant.Artifact
+	}
+	rep.verified("artifact", fmt.Sprintf("variant %s: %s (%s, %d bytes) — the bytes the package carries for it, from %s", variant.VariantID, packed.member, packed.hash, packed.size, source))
+	module = packed.path
+
+	verified, diagnostics, verr := verifyPackageCommand(exec.Command(verifier, "plugin", "verify", pkg), cfg.ID, cfg.Version, rep.packageHash, rep.manifestHash)
+	if diagnostics != "" {
+		rep.note("verifier-diagnostics", diagnostics)
+	}
+	if verr != nil {
+		rep.fail("verify", fmt.Sprintf("%s: %v", verifier, verr))
+		return finish(rep, h)
+	}
+	rep.verified("verify", verified+" (aii plugin verify)")
+
+	account, aerr := runOracleDescribe(oracle, module)
+	if aerr != nil {
+		rep.fail("account", "the module answers no account: "+aerr.Error())
+	} else if err := accountMatchesStaged(dir, cfg, account); err != nil {
+		rep.fail("account", err.Error())
+	} else {
+		rep.verified("account", "the module's aiii-plugin-describe equals the packaged descriptors, one file per interface")
+	}
+
+	w, werr := workerdrive.StartForward(oracle[0], oracle[1:], module, *timeout, h.answer)
+	if werr != nil {
+		rep.fail("admission", werr.Error())
+		return finish(rep, h)
+	}
+	if !strings.Contains(w.Banner(), "bbb_protocol_version=2") {
+		rep.fail("admission", "ready banner without bbb_protocol_version=2: "+w.Banner())
+	} else {
+		rep.pass("admission", "ready banner, bbb_protocol_version=2")
+	}
+	files, _ := filepath.Glob(filepath.Join(*cases, "*.json"))
+	sort.Strings(files)
+	if len(files) == 0 {
+		rep.note("cases", fmt.Sprintf("no case files under %s/ — only the built-in checks ran", *cases))
+	}
+	for i, f := range files {
+		runCase(rep, h, w, i, f, *timeout)
+	}
+
+	if cfg.ValidationFile != "" {
+		invoke := func(n int, operation string, args json.RawMessage) (*workerdrive.Reply, error) {
+			return w.Invoke(fmt.Sprintf(`"check-%d"`, n), operation, args, *timeout)
+		}
+		runPackageChecks(rep, h, dir, cfg, variant.VariantID, invoke, nil)
+	} else {
+		rep.note("checks", "the plugin declares no checks; a host uses it on its readiness alone")
+	}
+	if aerr == nil {
+		if problems := confirmationStance(cfg.PluginFamily, account, unconfirmedMarks(files)); len(problems) > 0 {
+			rep.fail("confirmation", strings.Join(problems, "; "))
+		} else {
+			rep.pass("confirmation", "every write.external operation declares operator_confirms or is marked unconfirmed by design")
+		}
+	}
+
+	reply, herr := w.Invoke(`"hostile-1"`, "harness.undeclared", nil, *timeout)
+	switch {
+	case herr != nil:
+		rep.fail("hostile", "an undeclared operation broke the session: "+herr.Error())
+	case reply.IsError || reply.Status == "failed" || reply.Status == "denied":
+		rep.pass("hostile", "an undeclared operation is answered, not crashed")
+	default:
+		rep.fail("hostile", "an undeclared operation reported success: "+string(reply.Raw))
+	}
+	if cerr := w.Close(*timeout); cerr != nil {
+		rep.fail("exit", cerr.Error())
+	} else {
+		rep.pass("exit", "clean stdin-EOF exit 0")
+	}
+	h.closeFiles()
+	return finish(rep, h)
+}
+
+func runCase(rep *report, h *harness, w *workerdrive.Worker, i int, path string, timeout time.Duration) {
+	rep.cases++
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		rep.fail("case", path+": "+err.Error())
+		return
+	}
+	var c testCase
+	if err := json.Unmarshal(raw, &c); err != nil || c.Operation == "" {
+		rep.fail("case", fmt.Sprintf("%s: not a case (needs operation): %v", path, err))
+		return
+	}
+	name := c.Name
+	if name == "" {
+		name = strings.TrimSuffix(filepath.Base(path), ".json")
+	}
+	caseSettings, serr := caseSettingValues(h.decls, c.Settings)
+	if serr != nil {
+		rep.fail("case", fmt.Sprintf("%s: %v", name, serr))
+		return
+	}
+	h.caseSettings = caseSettings
+	h.caseEmbeddingsModel = c.EmbeddingsModel
+	defer func() { h.caseSettings, h.caseEmbeddingsModel = nil, "" }()
+	want := c.Expect.Status
+	if want == "" {
+		want = "succeeded"
+	}
+	started := time.Now()
+	reply, err := w.Invoke(fmt.Sprintf(`"case-%d"`, i+1), c.Operation, withOperatorAct(withHostClock(c.Arguments), c.OperatorAct, c.Name), timeout)
+	if err != nil {
+		rep.fail("case "+name, err.Error())
+		return
+	}
+	got, reason := "error", ""
+	var payload string
+	if reply.IsError {
+		var eo struct {
+			Data struct {
+				ReasonCode string `json:"reasonCode"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(reply.Error, &eo)
+		reason, payload = eo.Data.ReasonCode, string(reply.Error)
+	} else {
+		got, reason, payload = reply.Status, reply.ReasonCode, string(reply.OperationResult)
+		if reply.Status == "" {
+			got = "succeeded"
+		}
+	}
+	switch {
+	case got != want:
+		rep.fail("case "+name, fmt.Sprintf("want status %s, got %s (%s)", want, got, excerpt(payload)))
+	case c.Expect.ReasonCode != "" && reason != c.Expect.ReasonCode:
+		rep.fail("case "+name, fmt.Sprintf("want reason_code %s, got %q", c.Expect.ReasonCode, reason))
+	case c.Expect.ResultContains.missingFrom(payload) != "":
+		rep.fail("case "+name, fmt.Sprintf("result lacks %q: %s", c.Expect.ResultContains.missingFrom(payload), excerpt(payload)))
+	default:
+		rep.pass("case "+name, fmt.Sprintf("%s (%d ms)", got, time.Since(started).Milliseconds()))
+	}
+}
+
+func (r *report) ensureBoundary() {
+	if r.boundaryDone {
+		return
+	}
+	appendBoundaryChecks(r, r.packageHash, r.manifestHash)
+	r.boundaryDone = true
+}
+
+func finish(rep *report, h *harness) int {
+	rep.ensureBoundary()
+	result, code := rep.result()
+	for _, e := range rep.entries {
+		switch e.Status {
+		case "pass":
+			fmt.Printf("  PASS  %-12s %s\n", e.Name, e.Detail)
+		case "fail":
+			fmt.Printf("  FAIL  %-12s %s\n", e.Name, e.Detail)
+		case "note":
+			fmt.Printf("  NOTE  %-12s %s\n", e.Name, e.Detail)
+		case "incomplete":
+			fmt.Printf("  INCOMPLETE  %-16s %s\n", e.Name, e.Detail)
+			if e.Next != "" {
+				fmt.Printf("              \u2192 %s\n", e.Next)
+			}
+		case "not_run":
+			fmt.Printf("  NOT-RUN     %-16s %s\n", e.Name, e.Detail)
+			if e.Next != "" {
+				fmt.Printf("              \u2192 %s\n", e.Next)
+			}
+		}
+	}
+	if h != nil {
+		for _, o := range h.observations {
+			fmt.Printf("  harness observed: %s\n", o)
+		}
+	}
+	fmt.Println("  harness observations are local and are not receipts; a host writes receipts, this command does not.")
+	fmt.Println("  scope: local = ran here · locally_verified = a check read back here · host = a boundary this command does not cross.")
+
+	var reportErr error
+	if rep.reportPath != "" {
+		if reportErr = writeReport(rep.reportPath, rep.envelope()); reportErr != nil {
+			fmt.Fprintf(os.Stderr, "aiisdk test: the -report was NOT written: %v\n", reportErr)
+		} else {
+			fmt.Printf("  report: %s (schema aiisdk.qual.v1)\n", rep.reportPath)
+		}
+	}
+	if reportErr != nil && result == "pass" {
+		fmt.Printf("RESULT: FAIL — the %d checks passed (%d cases), and the report asked for at %s was not written; whatever is at that path is not this run's\n", rep.checks, rep.cases, rep.reportPath)
+		return exitFail
+	}
+	switch result {
+	case "incomplete":
+		if rep.incompletePrereq {
+			fmt.Println("RESULT: INCOMPLETE — prerequisites missing; nothing was proven")
+			break
+		}
+		fmt.Printf("RESULT: INCOMPLETE — %d required check(s) could not run here (above); the %d that ran passed (%d cases) — local qualification is not complete\n", rep.unrun, rep.checks, rep.cases)
+	case "fail":
+		fmt.Printf("RESULT: FAIL (%d of %d checks failed, %d cases) — local qualification\n", rep.fails, rep.checks, rep.cases)
+	default:
+		fmt.Printf("RESULT: PASS (%d checks, %d cases) — LOCAL qualification only; signature, host activation and host receipt were not run (this is not deployment evidence)\n", rep.checks, rep.cases)
+	}
+	return code
+}
+
+func writeReport(path string, env qualEnvelope) error {
+	b, err := json.MarshalIndent(env, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode the report: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".aiisdk-report-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err = tmp.Write(append(b, '\n')); err == nil {
+		err = tmp.Chmod(0o644)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+func findVerifier() string {
+	if bin := os.Getenv("AII_OS_BIN"); bin != "" {
+		for _, n := range []string{"aii", "aii.exe"} {
+			if p := filepath.Join(bin, n); fileExists(p) {
+				return p
+			}
+		}
+	}
+	if p, err := exec.LookPath("aii"); err == nil {
+		return p
+	}
+	return ""
+}
+
+func tinygoVersion(tinygo string) string {
+	if tinygo == "" {
+		return "tinygo (not used: -skip-build)"
+	}
+	out, err := exec.Command(tinygo, "version").Output()
+	if err != nil {
+		return "tinygo (version unknown)"
+	}
+	return strings.TrimSpace(firstLineOf(string(out)))
+}
+
+func kitRevision() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	rev, mod := "", ""
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			mod = s.Value
+		}
+	}
+	if rev == "" {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			return info.Main.Version
+		}
+		return "unversioned build"
+	}
+	if len(rev) > 12 {
+		rev = rev[:12]
+	}
+	if mod == "true" {
+		rev += "+modified"
+	}
+	return rev
+}
+
+func firstLineOf(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+func excerpt(s string) string {
+	if len(s) > 160 {
+		return s[:160] + "…"
+	}
+	return s
+}
+
+func withHostClock(args json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if len(args) == 0 || json.Unmarshal(args, &m) != nil || m == nil {
+		m = map[string]json.RawMessage{}
+	}
+	if _, has := m["_host_now_ms"]; !has {
+		m["_host_now_ms"] = json.RawMessage(strconv.FormatInt(time.Now().UnixMilli(), 10))
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return args
+	}
+	return out
+}
+
+func withOperatorAct(args json.RawMessage, on bool, caseName string) json.RawMessage {
+	if !on {
+		return args
+	}
+	var m map[string]json.RawMessage
+	if len(args) == 0 || json.Unmarshal(args, &m) != nil || m == nil {
+		m = map[string]json.RawMessage{}
+	}
+	stamp, _ := json.Marshal(map[string]string{"id": "harness-act-" + caseName, "confirmed_at": time.Now().UTC().Format(time.RFC3339)})
+	m["_host_operator_act"] = stamp
+	out, err := json.Marshal(m)
+	if err != nil {
+		return args
+	}
+	return out
+}
+
+func accountMatchesStaged(dir string, cfg *aiiospkg.AuthorConfig, account []byte) error {
+	methods, err := aiiospkg.DescriptorIDs(account)
+	if err != nil {
+		return fmt.Errorf("the module's account is not a descriptor list: %v", err)
+	}
+	ifaces := cfg.InterfaceList()
+	byIface, err := aiiospkg.PartitionMethods(ifaces, methods)
+	if err != nil {
+		return fmt.Errorf("interfaces: %v", err)
+	}
+	for _, iface := range ifaces {
+		want := account
+		if len(ifaces) > 1 {
+			if want, err = aiiospkg.DescriptorsSubset(account, byIface[iface.ID]); err != nil {
+				return fmt.Errorf("interface %s: %v", iface.ID, err)
+			}
+		}
+		staged := filepath.Join(stageDir(dir, cfg), "install-root", filepath.FromSlash(aiiospkg.SchemaFileRel(iface)))
+		packaged, rerr := os.ReadFile(staged)
+		if rerr != nil {
+			return fmt.Errorf("interface %s: no packaged descriptor file (%v)", iface.ID, rerr)
+		}
+		if string(packaged) != string(want) {
+			return fmt.Errorf("interface %s: the module's aiii-plugin-describe and the packaged descriptor differ", iface.ID)
+		}
+	}
+	return nil
+}
+
+func unconfirmedMarks(files []string) map[string]string {
+	marks := map[string]string{}
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		var c testCase
+		if json.Unmarshal(raw, &c) != nil || c.Operation == "" || c.UnconfirmedByDesign == nil {
+			continue
+		}
+		marks[c.Operation] = *c.UnconfirmedByDesign
+	}
+	return marks
+}
+
+func confirmationStance(family string, account []byte, marks map[string]string) []string {
+	if family == "channel_adapter" {
+		return nil
+	}
+	var ops []struct {
+		ID               string `json:"id"`
+		Effects          string `json:"effects"`
+		OperatorConfirms bool   `json:"operator_confirms"`
+	}
+	if json.Unmarshal(account, &ops) != nil {
+		return nil
+	}
+	var problems []string
+	known := map[string]bool{}
+	for _, op := range ops {
+		known[op.ID] = true
+		external := op.Effects == "write.external"
+		reason, marked := marks[op.ID]
+		switch {
+		case external && !op.OperatorConfirms && !marked:
+			problems = append(problems, op.ID+" writes to a third party and declares no operator_confirms — declare it, or mark one of its cases \"unconfirmed_by_design\" with the reason")
+		case marked && strings.TrimSpace(reason) == "":
+			problems = append(problems, op.ID+" is marked unconfirmed_by_design with no reason")
+		case marked && op.OperatorConfirms:
+			problems = append(problems, op.ID+" is marked unconfirmed_by_design and declares operator_confirms — the mark says the opposite")
+		case marked && !external:
+			problems = append(problems, op.ID+" is marked unconfirmed_by_design and is not a write.external — the mark excuses nothing")
+		}
+	}
+	for op := range marks {
+		if !known[op] {
+			problems = append(problems, op+" is marked unconfirmed_by_design and the plugin declares no such operation")
+		}
+	}
+	sort.Strings(problems)
+	return problems
+}

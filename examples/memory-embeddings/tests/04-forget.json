@@ -1,0 +1,11 @@
+{
+  "name": "forget removes m:2",
+  "operation": "memory.forget",
+  "arguments": {
+    "id": "m:2"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"deleted\":true"
+  }
+}

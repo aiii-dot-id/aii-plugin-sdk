@@ -1,0 +1,9 @@
+{
+  "name": "interactions is denied by a stand-in that serves no history",
+  "operation": "interactions",
+  "arguments": {},
+  "expect": {
+    "status": "denied",
+    "reason_code": "OPERATION_NOT_ALLOWED"
+  }
+}

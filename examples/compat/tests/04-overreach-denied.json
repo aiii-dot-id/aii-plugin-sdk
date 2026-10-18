@@ -1,0 +1,9 @@
+{
+  "name": "overreach is denied, and returns the denial",
+  "operation": "overreach",
+  "arguments": {},
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

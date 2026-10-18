@@ -1,0 +1,626 @@
+package aiiospkg
+
+import (
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+const (
+	RuntimesFile  = "runtime.json"
+	InventoryFile = "inventory.json"
+	MaxRuntimes   = 8
+)
+
+type TreeLimits struct {
+	MaxInstalledBytes  int64
+	MaxFiles           int
+	MaxFileBytes       int64
+	MaxCompressedBytes int64
+	MaxDepth           int
+	MaxInventoryBytes  int64
+}
+
+var RuntimeLimits = TreeLimits{MaxFiles: 32768, MaxDepth: 24, MaxInventoryBytes: 16 << 20}
+
+func (l TreeLimits) filled() TreeLimits {
+	d := RuntimeLimits
+	if l.MaxInstalledBytes <= 0 {
+		l.MaxInstalledBytes = d.MaxInstalledBytes
+	}
+	if l.MaxFiles <= 0 {
+		l.MaxFiles = d.MaxFiles
+	}
+	if l.MaxFileBytes <= 0 {
+		l.MaxFileBytes = d.MaxFileBytes
+	}
+	if l.MaxCompressedBytes <= 0 {
+		l.MaxCompressedBytes = d.MaxCompressedBytes
+	}
+	if l.MaxDepth <= 0 {
+		l.MaxDepth = d.MaxDepth
+	}
+	if l.MaxInventoryBytes <= 0 {
+		l.MaxInventoryBytes = d.MaxInventoryBytes
+	}
+	return l
+}
+
+const (
+	CeilingInstalledBytes  = "plugins.runtime.max_installed_bytes"
+	CeilingFiles           = "plugins.runtime.max_files"
+	CeilingFileBytes       = "plugins.runtime.max_file_bytes"
+	CeilingCompressedBytes = "plugins.runtime.max_compressed_bytes"
+	CeilingDepth           = "plugins.runtime.max_depth"
+)
+
+func FormatCeilings(req map[string]int64) string {
+	keys := make([]string, 0, len(req))
+	for k := range req {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s >= %d", k, req[k]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+type RuntimeDecl struct {
+	VariantID       string `json:"variant_id"`
+	URL             string `json:"url"`
+	SHA256          string `json:"sha256"`
+	Size            int64  `json:"size"`
+	InstalledBytes  int64  `json:"installed_bytes"`
+	Files           int    `json:"files"`
+	InventorySHA256 string `json:"inventory_sha256"`
+
+	LargestFileBytes *int64 `json:"largest_file_bytes,omitempty"`
+	Depth            *int   `json:"depth,omitempty"`
+}
+
+const RuntimeExtentMinHost = "0.1.14"
+
+const maxRuntimeDepth = (maxTreePathBytes - 1) / 2
+
+func ValidateRuntimes(decls []RuntimeDecl, variants []AuthorVariant) error {
+	if len(decls) > MaxRuntimes {
+		return fmt.Errorf("%d runtimes; at most %d", len(decls), MaxRuntimes)
+	}
+	known := map[string]bool{}
+	for _, v := range variants {
+		known[v.VariantID] = true
+	}
+	seen := map[string]bool{}
+	for i, d := range decls {
+		if !known[d.VariantID] {
+			return fmt.Errorf("runtime %d: variant %q is not declared", i, d.VariantID)
+		}
+		if seen[d.VariantID] {
+			return fmt.Errorf("runtime %d: variant %s declared twice", i, d.VariantID)
+		}
+		seen[d.VariantID] = true
+		if !strings.HasPrefix(d.URL, "https://") {
+			return fmt.Errorf("runtime %d: url must be https", i)
+		}
+		if !reSHA256.MatchString(d.SHA256) || !reSHA256.MatchString(d.InventorySHA256) {
+			return fmt.Errorf("runtime %d: sha256 and inventory_sha256 are 64 hex digits", i)
+		}
+		if d.Size <= 0 || d.InstalledBytes <= 0 || d.Files <= 0 {
+			return fmt.Errorf("runtime %d: size, installed_bytes and files are positive", i)
+		}
+		if err := validExtent(d); err != nil {
+			return fmt.Errorf("runtime %d: %v", i, err)
+		}
+	}
+	return nil
+}
+
+func validExtent(d RuntimeDecl) error {
+	if (d.LargestFileBytes == nil) != (d.Depth == nil) {
+		return fmt.Errorf("largest_file_bytes and depth are declared together or not at all")
+	}
+	if d.LargestFileBytes == nil {
+		return nil
+	}
+	largest, depth := *d.LargestFileBytes, *d.Depth
+	mean := (d.InstalledBytes-1)/int64(d.Files) + 1
+	if largest <= 0 || largest > d.InstalledBytes || largest < mean {
+		return fmt.Errorf("largest_file_bytes %d is not the largest of %d files totalling %d bytes", largest, d.Files, d.InstalledBytes)
+	}
+	if depth < 1 || depth > maxRuntimeDepth {
+		return fmt.Errorf("depth %d is outside 1..%d", depth, maxRuntimeDepth)
+	}
+	return nil
+}
+
+func ValidateRuntimeExtent(decls []RuntimeDecl, minHost string) error {
+	for _, d := range decls {
+		if (d.LargestFileBytes != nil || d.Depth != nil) && !extentFloor(minHost) {
+			return fmt.Errorf("runtime %s declares largest_file_bytes and depth, which require aiios_min_version >= %s", d.VariantID, RuntimeExtentMinHost)
+		}
+	}
+	return nil
+}
+
+func requireRuntimeExtent(decls []RuntimeDecl, minHost string) error {
+	for _, d := range decls {
+		if d.LargestFileBytes == nil && d.Depth == nil && extentFloor(minHost) {
+			return fmt.Errorf("runtime %s: aiios_min_version %s reads a runtime's extent; declare largest_file_bytes and depth as aiisdk runtime-pack prints them", d.VariantID, minHost)
+		}
+	}
+	return nil
+}
+
+func extentFloor(minHost string) bool {
+	return ValidHostVersion(minHost) && CompareHostVersion(minHost, RuntimeExtentMinHost) >= 0
+}
+
+func DeclaredCeilings(d RuntimeDecl) map[string]int64 {
+	return ExceededCeilings(d, RuntimeLimits)
+}
+
+func ExceededCeilings(d RuntimeDecl, limits TreeLimits) map[string]int64 {
+	l := limits.forDecl(d)
+	req := map[string]int64{}
+	if d.InstalledBytes > l.MaxInstalledBytes {
+		req[CeilingInstalledBytes] = d.InstalledBytes
+	}
+	if d.Files > l.MaxFiles {
+		req[CeilingFiles] = int64(d.Files)
+	}
+	if d.Size > l.MaxCompressedBytes {
+		req[CeilingCompressedBytes] = d.Size
+	}
+	if d.LargestFileBytes != nil && *d.LargestFileBytes > l.MaxFileBytes {
+		req[CeilingFileBytes] = *d.LargestFileBytes
+	}
+	if d.Depth != nil && *d.Depth > l.MaxDepth {
+		req[CeilingDepth] = int64(*d.Depth)
+	}
+	return req
+}
+
+func (l TreeLimits) forDecl(d RuntimeDecl) TreeLimits {
+	l = l.filled()
+	if l.MaxCompressedBytes <= 0 {
+		l.MaxCompressedBytes = d.Size
+	}
+	if l.MaxInstalledBytes <= 0 {
+		l.MaxInstalledBytes = d.InstalledBytes
+	}
+	if l.MaxFileBytes <= 0 {
+		l.MaxFileBytes = d.InstalledBytes
+	}
+	return l
+}
+
+func RuntimesJSON(decls []RuntimeDecl) ([]byte, error) {
+	return marshalCanonical(struct {
+		Runtimes []RuntimeDecl `json:"runtimes"`
+	}{decls})
+}
+
+type InventoryEntry struct {
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
+	Mode   string `json:"mode"`
+}
+
+type Inventory struct {
+	Files          []InventoryEntry `json:"files"`
+	InstalledBytes int64            `json:"installed_bytes"`
+}
+
+type RuntimeArchive struct {
+	SHA256          string
+	Size            int64
+	InstalledBytes  int64
+	Files           int
+	InventorySHA256 string
+
+	LargestFileBytes int64
+	Depth            int
+
+	Directories int
+}
+
+func memberAllowance(maxFiles int) int { return maxFiles + maxFiles/4 }
+
+func leastFilesCeiling(files, dirs int) int {
+	m := files
+	if least := (files + dirs) * 4 / 5; least > m {
+		m = least
+	}
+	for memberAllowance(m) < files+dirs {
+		m++
+	}
+	return m
+}
+
+func (a *RuntimeArchive) RequiredCeilings() map[string]int64 {
+	d := RuntimeLimits.forDecl(RuntimeDecl{Size: a.Size, InstalledBytes: a.InstalledBytes})
+	req := map[string]int64{}
+	if a.InstalledBytes > d.MaxInstalledBytes {
+		req[CeilingInstalledBytes] = a.InstalledBytes
+	}
+	if need := leastFilesCeiling(a.Files, a.Directories); need > d.MaxFiles {
+		req[CeilingFiles] = int64(need)
+	}
+	if a.LargestFileBytes > d.MaxFileBytes {
+		req[CeilingFileBytes] = a.LargestFileBytes
+	}
+	if a.Size > d.MaxCompressedBytes {
+		req[CeilingCompressedBytes] = a.Size
+	}
+	if a.Depth > d.MaxDepth {
+		req[CeilingDepth] = int64(a.Depth)
+	}
+	return req
+}
+
+func WriteRuntimeTree(w io.Writer, dir, root string) (*RuntimeArchive, error) {
+	return writeRuntimeTree(w, dir, root, "", RuntimeLimits)
+}
+
+func WriteRuntimeTreeWithin(w io.Writer, dir, root string, budget TreeLimits) (*RuntimeArchive, error) {
+	return writeRuntimeTree(w, dir, root, "", budget)
+}
+
+func WriteRuntimeTreeFor(w io.Writer, dir, root, platform string, budget TreeLimits) (*RuntimeArchive, error) {
+	return writeRuntimeTree(w, dir, root, platform, budget)
+}
+
+const maxTreePathBytes = 511
+
+func treeSegmentForbidden(seg string) bool {
+	if len(seg) == 0 || len(seg) > 255 || seg == "." || seg == ".." || strings.HasSuffix(seg, ".") || reWindowsDevice.MatchString(seg) {
+		return true
+	}
+	if seg[0] == ' ' || seg[len(seg)-1] == ' ' {
+		return true
+	}
+	for i := 0; i < len(seg); i++ {
+		c := seg[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '+' || c == '-' || c == ' ' || c == '(' || c == ')' {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func writeRuntimeTree(w io.Writer, dir, root, platform string, budget TreeLimits) (*RuntimeArchive, error) {
+	budget = budget.filled()
+	if root == "" || strings.Contains(root, "/") || treeSegmentForbidden(root) {
+		return nil, fmt.Errorf("root %q must be one admitted path component", root)
+	}
+	if platform != "" && !enumHas(platform, "linux", "macos", "windows", "android", "ios") {
+		return nil, fmt.Errorf("platform %q must be one of linux, macos, windows, android, ios, as the runtime's variant names it", platform)
+	}
+	type source struct {
+		rel, abs, sha, mode string
+		size                int64
+	}
+	var files []source
+	var total, largest int64
+	depth := 0
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		rel, rerr := filepath.Rel(dir, path)
+		if rerr != nil {
+			return rerr
+		}
+		if rel == "." {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink; a runtime tree carries no links", rel)
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s is not a regular file", rel)
+		}
+		if rel == InventoryFile {
+			return fmt.Errorf("%s is the archive's own member; the tree must not carry one", InventoryFile)
+		}
+		segs := strings.Split(rel, "/")
+		if len(segs) > budget.MaxDepth {
+			return fmt.Errorf("%s is deeper than %d segments (-max-depth)", rel, budget.MaxDepth)
+		}
+		if len(segs) > depth {
+			depth = len(segs)
+		}
+		for _, seg := range segs {
+			if treeSegmentForbidden(seg) {
+				return fmt.Errorf("%s: segment %q is not admitted by the grammar", rel, seg)
+			}
+		}
+		if len(root)+1+len(rel) > maxTreePathBytes {
+			return fmt.Errorf("%s: the member path exceeds %d bytes", rel, maxTreePathBytes)
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		if budget.MaxFileBytes > 0 && info.Size() > budget.MaxFileBytes {
+			return fmt.Errorf("%s is %d bytes; the budget is %d per file (-max-file-bytes)", rel, info.Size(), budget.MaxFileBytes)
+		}
+		if info.Size() > largest {
+			largest = info.Size()
+		}
+		sum, herr := hashFileHex(path)
+		if herr != nil {
+			return herr
+		}
+		mode := "file"
+		if info.Mode().Perm()&0o111 != 0 {
+			mode = "exec"
+		}
+		files = append(files, source{rel: rel, abs: path, size: info.Size(), sha: "sha256:" + sum, mode: mode})
+		total += info.Size()
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("%s holds no files", dir)
+	}
+	if platform == "windows" {
+		var marked []string
+		for _, f := range files {
+			if f.mode == "exec" {
+				marked = append(marked, f.rel)
+			}
+		}
+		if len(marked) > 0 {
+			more := ""
+			switch n := len(marked) - 1; {
+			case n == 1:
+				more = " and 1 more file"
+			case n > 1:
+				more = fmt.Sprintf(" and %d more files", n)
+			}
+			return nil, fmt.Errorf(`the executable bit is set on %s%s, and this runtime is for Windows, which keeps no executable mark on a file: the host refuses an inventory row "exec" there, after the whole runtime has downloaded; clear the bit on every file of a Windows runtime (chmod a-x) and pack again, and each is listed as "file"`, marked[0], more)
+		}
+	}
+	if len(files) > budget.MaxFiles {
+		return nil, fmt.Errorf("%d files exceed the budget of %d (-max-files); a tree past the host's defaults needs the operator's ceilings, which the report names", len(files), budget.MaxFiles)
+	}
+
+	var dirs []string
+	seenDir := map[string]bool{}
+	for _, f := range files {
+		parts := strings.Split(f.rel, "/")
+		for j := 1; j < len(parts); j++ {
+			d := strings.Join(parts[:j], "/")
+			if !seenDir[d] {
+				seenDir[d] = true
+				dirs = append(dirs, d)
+			}
+		}
+	}
+
+	if n := len(files) + len(dirs); n > memberAllowance(budget.MaxFiles) {
+		return nil, fmt.Errorf("%d files in %d directories are %d archive members beside the root and the inventory; the budget of %d files (-max-files) admits %d, and the least that admits this tree is %d", len(files), len(dirs), n, budget.MaxFiles, memberAllowance(budget.MaxFiles), leastFilesCeiling(len(files), len(dirs)))
+	}
+
+	paths := make([]string, 0, len(files)+len(dirs))
+	paths = append(paths, dirs...)
+	for _, f := range files {
+		paths = append(paths, f.rel)
+	}
+	sort.Strings(paths)
+
+	if seenDir[InventoryFile] {
+		return nil, fmt.Errorf("%s is the archive's own member, written beside the tree's top-level names; the tree must not carry a directory of that name", InventoryFile)
+	}
+	for _, p := range paths {
+		if !strings.Contains(p, "/") && casefoldSiblingCollision(p, InventoryFile) {
+			return nil, fmt.Errorf("%s differs only in letter case from %s, the archive's own member, written beside the tree's top-level names; a filesystem that folds case would merge them, so the host refuses the archive", p, InventoryFile)
+		}
+	}
+	if a, b, collide := casefoldSiblings(paths); collide {
+		return nil, fmt.Errorf("%s and %s differ only in letter case; a filesystem that folds case would merge them, so the host refuses the archive", a, b)
+	}
+	if budget.MaxInstalledBytes > 0 && total > budget.MaxInstalledBytes {
+		return nil, fmt.Errorf("%d installed bytes exceed the budget of %d (-max-installed-bytes)", total, budget.MaxInstalledBytes)
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
+	inv := Inventory{InstalledBytes: total}
+	for _, f := range files {
+		inv.Files = append(inv.Files, InventoryEntry{Path: f.rel, Size: f.size, SHA256: f.sha, Mode: f.mode})
+	}
+	inventory, err := json.Marshal(inv)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(inventory)) > budget.MaxInventoryBytes {
+		return nil, fmt.Errorf("the inventory is %d bytes; at most %d", len(inventory), budget.MaxInventoryBytes)
+	}
+	type member struct {
+		path  string
+		isDir bool
+		src   *source
+	}
+	members := []member{{path: root, isDir: true}, {path: root + "/" + InventoryFile}}
+	var rest []member
+	for _, d := range dirs {
+		rest = append(rest, member{path: root + "/" + d, isDir: true})
+	}
+	for i := range files {
+		rest = append(rest, member{path: root + "/" + files[i].rel, src: &files[i]})
+	}
+	sort.Slice(rest, func(i, j int) bool { return rest[i].path < rest[j].path })
+	members = append(members, rest...)
+
+	hw := sha256.New()
+	cw := &countingWriter{w: io.MultiWriter(w, hw)}
+	zw, err := gzip.NewWriterLevel(cw, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	zw.Header.OS = 255
+	for _, m := range members {
+		typ := byte(tarTypeRegular)
+		mode := int64(tarModeRegular)
+		var size int64
+		switch {
+		case m.isDir:
+			typ, mode = tarTypeDirectory, tarModeDir
+		case m.src != nil:
+			size = m.src.size
+			if m.src.mode == "exec" {
+				mode = tarModeExecutable
+			}
+		default:
+			size = int64(len(inventory))
+		}
+		if err := writeMemberHeader(zw, m.path, size, mode, typ); err != nil {
+			return nil, err
+		}
+		if m.isDir {
+			continue
+		}
+		if m.src == nil {
+			if _, err := zw.Write(inventory); err != nil {
+				return nil, err
+			}
+		} else {
+
+			f, err := os.Open(m.src.abs)
+			if err != nil {
+				return nil, err
+			}
+			fh := sha256.New()
+			n, cerr := io.Copy(io.MultiWriter(zw, fh), f)
+			f.Close()
+			if cerr != nil {
+				return nil, cerr
+			}
+			if n != m.src.size {
+				return nil, fmt.Errorf("%s changed size while packing", m.src.rel)
+			}
+			if "sha256:"+hex.EncodeToString(fh.Sum(nil)) != m.src.sha {
+				return nil, fmt.Errorf("%s changed while packing: its bytes no longer hash to its inventory row; pack again once nothing writes to the tree", m.src.rel)
+			}
+		}
+		if pad := size % tarBlockBytes; pad != 0 {
+			if _, err := zw.Write(make([]byte, tarBlockBytes-pad)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if _, err := zw.Write(make([]byte, 2*tarBlockBytes)); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	if budget.MaxCompressedBytes > 0 && cw.n > budget.MaxCompressedBytes {
+		return nil, fmt.Errorf("the archive is %d bytes compressed; the budget is %d (-max-compressed-bytes)", cw.n, budget.MaxCompressedBytes)
+	}
+	invSum := sha256.Sum256(inventory)
+	return &RuntimeArchive{
+		SHA256: hex.EncodeToString(hw.Sum(nil)), Size: cw.n, InstalledBytes: total, Files: len(files),
+		InventorySHA256: hex.EncodeToString(invSum[:]), LargestFileBytes: largest, Depth: depth,
+		Directories: len(dirs),
+	}, nil
+}
+
+func casefoldSiblings(paths []string) (first, second string, collide bool) {
+	seen := make(map[string]string, len(paths))
+	for _, p := range paths {
+		cut := strings.LastIndexByte(p, '/') + 1
+		name := []byte(p[cut:])
+		for i := range name {
+			name[i] = asciiLower(name[i])
+		}
+		key := p[:cut] + string(name)
+		if other, ok := seen[key]; ok && other != p {
+			return other, p, true
+		}
+		seen[key] = p
+	}
+	return "", "", false
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func hashFileHex(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func writeMemberHeader(w io.Writer, path string, size, mode int64, typ byte) error {
+	stored := path
+	if typ == tarTypeDirectory {
+		stored = path + "/"
+	}
+	if pathFitsUSTAR(stored) {
+		hdr, err := buildTarHeader(stored, size, mode, typ)
+		if err != nil {
+			return fmt.Errorf("header %q: %v", path, err)
+		}
+		_, err = w.Write(hdr[:])
+		return err
+	}
+	record, err := paxBuildPathRecord(path)
+	if err != nil {
+		return fmt.Errorf("pax record %q: %v", path, err)
+	}
+	paxHdr, err := buildTarHeader(paxHeaderPath, int64(len(record)), tarModeRegular, tarTypePAXLocal)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(paxHdr[:]); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, record); err != nil {
+		return err
+	}
+	if pad := len(record) % tarBlockBytes; pad != 0 {
+		if _, err := w.Write(make([]byte, tarBlockBytes-pad)); err != nil {
+			return err
+		}
+	}
+	hdr, err := buildTarHeader(paxMemberPlaceholder, size, mode, typ)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(hdr[:])
+	return err
+}

@@ -1,0 +1,21 @@
+{
+  "name": "a confirmed update reads the event first, and is denied without a grant",
+  "operation": "calendar.update",
+  "operator_act": true,
+  "arguments": {
+    "event_id": "7kq3m4c1",
+    "event_title": "Dentist",
+    "version": "\"3181161784712000\"",
+    "start": "2026-10-02T11:00",
+    "end": "2026-10-02T12:00",
+    "time_zone": "America/New_York",
+    "notify": "none"
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

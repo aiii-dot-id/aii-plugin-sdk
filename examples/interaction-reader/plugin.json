@@ -1,0 +1,52 @@
+{
+  "id": "org.example.interaction-reader",
+  "version": "0.1.0",
+  "plugin_family": "tool_bridge",
+  "title": "Interaction reader fixture",
+  "description": "Bounded interaction data access without learning or writes.",
+  "interface": {
+    "id": "interaction.reader",
+    "version": 1
+  },
+  "capability_envelope": [
+    "interaction.read"
+  ],
+  "variants": [
+    {
+      "variant_id": "linux-x86_64-native",
+      "platform": "linux",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "native_t3_component",
+      "admission_profile": "platform_reserved",
+      "variant_capabilities": [
+        "interaction.read"
+      ],
+      "artifact": "dist/interaction-reader-linux-x86_64"
+    },
+    {
+      "variant_id": "macos-arm64-native",
+      "platform": "macos",
+      "arch": "arm64",
+      "topology": "full_identity_host",
+      "execution_runtime": "native_t3_component",
+      "admission_profile": "platform_reserved",
+      "variant_capabilities": [
+        "interaction.read"
+      ],
+      "artifact": "dist/interaction-reader-macos-arm64"
+    },
+    {
+      "variant_id": "windows-x86_64-native",
+      "platform": "windows",
+      "arch": "x86_64",
+      "topology": "full_identity_host",
+      "execution_runtime": "native_t3_component",
+      "admission_profile": "platform_reserved",
+      "variant_capabilities": [
+        "interaction.read"
+      ],
+      "artifact": "dist/interaction-reader-windows-x86_64.exe"
+    }
+  ]
+}

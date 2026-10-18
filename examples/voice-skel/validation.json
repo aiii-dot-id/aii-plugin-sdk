@@ -1,0 +1,12 @@
+{"checks": [
+  {"name": "hears its tail", "sets": ["*"], "lane": "session",
+   "input": {"audio": "checks/tone-16k.wav"},
+   "expect": {"events": {"order": ["session_ready", "transcript_final", "input_finished"],
+                         "transcript_contains": ["the tail, finalized"]}},
+   "within_ms": 10000},
+  {"name": "speaks the ready sentence", "sets": ["*"], "lane": "session",
+   "input": {"text": "The local voice service is ready."},
+   "expect": {"events": {"order": ["session_ready", "synthesis_start", "synthesis_end"],
+                         "audio_at_least": {"ms": 100, "rms_dbfs": -30}}},
+   "within_ms": 10000}
+]}

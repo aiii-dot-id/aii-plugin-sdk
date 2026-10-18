@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "the event's id, as a read of the calendar gave it"
+    },
+    "event_title": {
+      "type": "string",
+      "maxLength": 1024,
+      "description": "the event's title as that read gave it; nothing is deleted if the event's title differs"
+    },
+    "notify": {
+      "type": "string",
+      "enum": [
+        "none",
+        "externalOnly",
+        "all"
+      ],
+      "default": "none",
+      "description": "whom Google emails that the event is cancelled: none (the safe choice), externalOnly (guests who do not use Google Calendar), or all guests"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_title",
+    "notify"
+  ],
+  "additionalProperties": false
+}

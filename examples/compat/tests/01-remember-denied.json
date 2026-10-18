@@ -1,0 +1,11 @@
+{
+  "name": "remember is denied without a grant, and says so by the host's code",
+  "operation": "remember",
+  "arguments": {
+    "text": "the ledger is the only identity truth"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

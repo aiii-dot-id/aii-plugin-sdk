@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "page": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "the next_page an earlier answer gave, to read the rest of that same day"
+    }
+  },
+  "additionalProperties": false
+}

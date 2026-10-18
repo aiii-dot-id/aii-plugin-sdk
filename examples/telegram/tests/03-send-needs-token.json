@@ -1,0 +1,12 @@
+{
+  "name": "sending without the bot_token handle is refused by name",
+  "operation": "send",
+  "arguments": {
+    "address": "123456",
+    "body": "hello"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

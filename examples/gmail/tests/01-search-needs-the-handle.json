@@ -1,0 +1,11 @@
+{
+  "name": "a search without the google handle is refused by name",
+  "operation": "gmail.search",
+  "arguments": {
+    "query": "in:inbox"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

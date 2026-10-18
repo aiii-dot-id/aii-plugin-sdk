@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "address": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 254,
+      "description": "the contact's email address from the address book"
+    },
+    "body": {
+      "type": "string",
+      "maxLength": 65536,
+      "description": "the message; its first line is the mail's subject"
+    }
+  },
+  "required": [
+    "address"
+  ],
+  "additionalProperties": false
+}

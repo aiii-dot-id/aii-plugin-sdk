@@ -1,0 +1,19 @@
+{
+  "name": "a create in a zone no one keeps is refused before any call",
+  "operation": "calendar.create",
+  "operator_act": true,
+  "arguments": {
+    "title": "Dentist",
+    "start": "2026-10-02T10:00",
+    "end": "2026-10-02T11:00",
+    "time_zone": "Mars/Olympus",
+    "notify": "none"
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

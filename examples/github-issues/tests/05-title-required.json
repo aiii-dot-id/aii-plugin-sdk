@@ -1,0 +1,15 @@
+{
+  "name": "an issue without a title is refused before any call",
+  "operation": "issues.create",
+  "operator_act": true,
+  "arguments": {
+    "title": ""
+  },
+  "settings": {
+    "repo": "golang/go"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

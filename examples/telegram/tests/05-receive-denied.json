@@ -1,0 +1,12 @@
+{
+  "name": "receiving is denied without a grant, and dials nothing",
+  "operation": "receive",
+  "arguments": {},
+  "settings": {
+    "bot_token": "tg"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

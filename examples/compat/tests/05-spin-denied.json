@@ -1,0 +1,11 @@
+{
+  "name": "spin is denied before it spins",
+  "operation": "spin",
+  "arguments": {
+    "text": "a spin that is never granted"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

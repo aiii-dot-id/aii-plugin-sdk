@@ -1,0 +1,18 @@
+{
+  "name": "an update the operator has not confirmed is refused before anything is asked",
+  "operation": "calendar.update",
+  "arguments": {
+    "event_id": "7kq3m4c1",
+    "event_title": "Dentist",
+    "version": "\"3181161784712000\"",
+    "title": "Dentist (moved)",
+    "notify": "none"
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

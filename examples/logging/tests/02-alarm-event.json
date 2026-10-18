@@ -1,0 +1,16 @@
+{
+  "name": "a delivered alarm event becomes a line",
+  "operation": "log.event",
+  "arguments": {
+    "topic": "alarm.fired",
+    "at": "2026-09-05T11:00:01Z",
+    "payload": {
+      "owner": "DREAM",
+      "alarm_id": "d1",
+      "accepted": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "the public issues of golang/go are listed",
+  "operation": "issues.list",
+  "arguments": {
+    "limit": 2
+  },
+  "settings": {
+    "repo": "golang/go"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"http_status\":200"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "the adapter names its channel and receives by webhook",
+  "operation": "describe",
+  "arguments": {},
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "\"receive\":\"webhook\""
+  }
+}

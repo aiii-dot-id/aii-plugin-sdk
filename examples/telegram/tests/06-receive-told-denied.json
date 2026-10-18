@@ -1,0 +1,16 @@
+{
+  "name": "a receive told what the host recorded is refused only for want of a grant",
+  "operation": "receive",
+  "arguments": {
+    "recorded": [
+      "42:7"
+    ]
+  },
+  "settings": {
+    "bot_token": "tg"
+  },
+  "expect": {
+    "status": "denied",
+    "reason_code": "POLICY_DENY"
+  }
+}

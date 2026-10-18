@@ -1,0 +1,11 @@
+{
+  "name": "an empty query is refused as an argument fault",
+  "operation": "memory.recall",
+  "arguments": {
+    "query": ""
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

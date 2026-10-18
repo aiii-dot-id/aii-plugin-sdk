@@ -1,0 +1,15 @@
+{
+  "name": "a notification that is not a Pub/Sub push is acknowledged and ignored, with no call to anyone",
+  "operation": "gmail.notify",
+  "arguments": {
+    "method": "POST",
+    "path": "notify",
+    "query": "",
+    "headers": {},
+    "body": "not json"
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "ignored"
+  }
+}

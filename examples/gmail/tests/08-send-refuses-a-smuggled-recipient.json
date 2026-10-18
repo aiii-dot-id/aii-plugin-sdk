@@ -1,0 +1,19 @@
+{
+  "name": "a confirmed send with a second address inside one recipient is refused before any call",
+  "operation": "gmail.send",
+  "operator_act": true,
+  "arguments": {
+    "to": [
+      "recipient@example.com, attacker@evil.example"
+    ],
+    "subject": "Thursday",
+    "body": "Recipient — Thursday at ten still suits me."
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}

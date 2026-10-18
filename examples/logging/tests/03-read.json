@@ -1,0 +1,11 @@
+{
+  "name": "the log reads back the recent lines",
+  "operation": "log.read",
+  "arguments": {
+    "lines": 10
+  },
+  "expect": {
+    "status": "succeeded",
+    "result_contains": "alarm.fired\\towner=DREAM"
+  }
+}

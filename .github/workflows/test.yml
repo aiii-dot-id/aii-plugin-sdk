@@ -1,0 +1,28 @@
+name: test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GOMAXPROCS: "4"
+      GOFLAGS: "-p=4"
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          git config core.autocrlf false
+          git checkout-index --force --all
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go build ./...
+      - run: go vet ./...
+      - shell: bash
+        run: test -z "$(gofmt -l .)"
+      - run: go test -race -count=1 -timeout=15m ./...

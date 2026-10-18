@@ -1,0 +1,18 @@
+{
+  "name": "a draft whose subject smuggles a header after a line break is refused before any call",
+  "operation": "gmail.draft",
+  "arguments": {
+    "to": [
+      "recipient@example.com"
+    ],
+    "subject": "Thursday\r\nBcc: attacker@evil.example",
+    "body": "Recipient — Thursday at ten still suits me."
+  },
+  "settings": {
+    "google": "google-work"
+  },
+  "expect": {
+    "status": "failed",
+    "reason_code": "OPERATION_ARGUMENT_INVALID"
+  }
+}
