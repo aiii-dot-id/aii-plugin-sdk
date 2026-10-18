@@ -5,14 +5,18 @@
 # (knobs: TINYGO, AII_OS_DIR, AII_OS_GO — see CONTRIBUTING.md).
 
 GO ?= go
+PYTHON ?= python3
 
-.PHONY: test e2e acceptance cli clean
+.PHONY: test release-test e2e acceptance cli clean
 
 test:
 	$(GO) build ./...
 	$(GO) vet ./...
 	@fmt_out=$$(gofmt -l .); if [ -n "$$fmt_out" ]; then echo "gofmt needed on:"; echo "$$fmt_out"; exit 1; fi
 	$(GO) test -race -count=1 ./...
+
+release-test:
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) scripts/release/test_verify_sdk_release.py -v
 
 e2e:
 	$(GO) test -tags e2e -count=1 -v ./e2e/

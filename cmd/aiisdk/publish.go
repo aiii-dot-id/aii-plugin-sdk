@@ -34,7 +34,7 @@ type catalogEntry struct {
 func cmdPublish(args []string) int {
 	fs := flag.NewFlagSet("aiisdk publish", flag.ContinueOnError)
 	url := fs.String("url", "", "the URL where the .aiiospkg is (or will be) hosted (required)")
-	tier := fs.String("tier", "T1", "the tier the package is published at: T0, T1 or T2 for a WASM package; T3 is the platform's tier, and the only one for native code")
+	tier := fs.String("tier", "T1", "the tier the package is published at: T0, T1, T2 or T3; native code requires T3, and platform-signed WASM may also be T3")
 	summary := fs.String("summary", "", "one-line summary (defaults to packaged title, then description)")
 	pkgPath := fs.String("pkg", "", "path to the built .aiiospkg (default: dist/<id>-<version>.aiiospkg)")
 	fs.Usage = func() {
@@ -121,9 +121,6 @@ func buildCatalogEntry(cfg *aiiospkg.AuthorConfig, pkgPath, dir, url, tier, summ
 
 	if native && tier != "T3" {
 		return nil, fmt.Errorf("a package with a native variant runs only at T3: publish it with -tier T3, or drop the native variant")
-	}
-	if !native && tier == "T3" {
-		return nil, fmt.Errorf("T3 is the platform's tier for native code; a WASM package publishes at T0, T1 or T2")
 	}
 	if portable {
 		p := base

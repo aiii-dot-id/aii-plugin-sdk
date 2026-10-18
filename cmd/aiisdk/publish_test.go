@@ -104,9 +104,8 @@ func TestBuildCatalogEntryNativeRowsShareOneArchive(t *testing.T) {
 	}
 }
 
-// The tier must agree with the package: T3 is the platform's tier for
-// native code, so a WASM package cannot publish as T3 and a package with
-// a native variant cannot publish below it.
+// Native code requires T3. A platform may also sign WASM at T3: authority
+// follows the signing role, not the choice of execution runtime.
 func TestBuildCatalogEntryRefusesAnIncoherentTier(t *testing.T) {
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, "dist", "com.x.mem-1.0.0.aiiospkg")
@@ -116,8 +115,8 @@ func TestBuildCatalogEntryRefusesAnIncoherentTier(t *testing.T) {
 	wasm := &aiiospkg.AuthorConfig{ID: "com.x.mem", Version: "1.0.0", Title: "Mem",
 		Variants: []aiiospkg.AuthorVariant{{VariantID: "wasm", Platform: "linux", Arch: "x86_64", ExecutionRuntime: "wasm_component"}}}
 	writeCatalogFixture(t, wasm, pkg)
-	if _, err := buildCatalogEntry(wasm, "", dir, "https://h/mem.aiiospkg", "T3", ""); err == nil {
-		t.Fatal("a WASM package must not publish as T3")
+	if entry, err := buildCatalogEntry(wasm, "", dir, "https://h/mem.aiiospkg", "T3", ""); err != nil || entry.Tier != "T3" || len(entry.Packages) != 1 || entry.Packages[0].Platform != "*" || entry.Packages[0].Arch != "*" {
+		t.Fatalf("platform-signed WASM must retain its T3 portable catalog row: %+v (%v)", entry, err)
 	}
 	native := &aiiospkg.AuthorConfig{ID: "com.x.mem", Version: "1.0.0", Title: "Mem",
 		Variants: []aiiospkg.AuthorVariant{{VariantID: "native", Platform: "linux", Arch: "x86_64", ExecutionRuntime: "native_t3_component"}}}

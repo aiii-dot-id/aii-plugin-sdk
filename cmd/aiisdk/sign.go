@@ -20,6 +20,10 @@ func cmdSign(args []string) int {
 	stageFlag := fs.String("dir", "", "staged package tree to sign (default: dist/pkg/<id>-<version> from plugin.json)")
 	keysFlag := fs.String("keys", "", "dev chain directory (default: .keys)")
 	outFlag := fs.String("out", "", "output bundle path (default: dist/<id>-<version>.aiiospkg)")
+	platformSignature := fs.String("platform-signature", "", "attach this already issued plugin.platform_release envelope; no private key is read")
+	packageFlag := fs.String("pkg", "", "canonical unsigned archive for -platform-signature (required with it)")
+	platformKey := fs.String("platform-key", "", "pinned platform public key for host verification (default: the host's shipped root)")
+	trustDir := fs.String("trust-dir", "", "signed revocation snapshots for host verification (default: the host's shipped snapshots)")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `Usage: aiisdk sign [flags]
 
@@ -45,10 +49,39 @@ without it):
 
 Flags:
 `)
+		fmt.Fprint(os.Stderr, `
+For an independently issued platform signature, work from the unsigned
+archive rather than a staging filesystem. This reads no private key:
+
+  aiisdk sign -pkg /path/unsigned.aiiospkg \
+      -platform-signature /path/platform.sig -out /path/signed.aiiospkg
+
+The original archive is unchanged. File bytes and executable modes are
+preserved. The host's offline verifier must prove exactly this package at
+T3 before the output is replaced. Set AII_OS_BIN to its binary directory,
+or put aii on PATH. For a non-shipped root, also name -platform-key and
+-trust-dir. Neither -dir nor -keys applies to this mode.
+
+`)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if fs.NArg() != 0 {
+		return fail("sign takes flags, not positional arguments")
+	}
+	if *platformSignature != "" {
+		if *stageFlag != "" || *keysFlag != "" || *packageFlag == "" || *outFlag == "" {
+			return fail("-platform-signature requires -pkg and distinct -out; -dir and -keys do not apply")
+		}
+		if err := attachPlatformSignature(*packageFlag, *platformSignature, *outFlag, *platformKey, *trustDir); err != nil {
+			return fail("%v", err)
+		}
+		return 0
+	}
+	if *packageFlag != "" || *platformKey != "" || *trustDir != "" {
+		return fail("-pkg, -platform-key and -trust-dir require -platform-signature")
 	}
 	dir, err := os.Getwd()
 	if err != nil {

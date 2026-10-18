@@ -26,6 +26,150 @@ func mustBundle(t *testing.T, tree *Tree) []byte {
 	return b
 }
 
+func TestReadBundlePreservesBytesModesAndPAX(t *testing.T) {
+	tree := NewTree("com.example.package-1.2.3")
+	tree.Add("manifest.json", []byte(`{"id":"com.example.package"}`))
+	tree.Add("install-root/bin/helper", []byte("executable fixture"))
+	tree.Exec["install-root/bin/helper"] = true
+	tree.Add("install-root/data/"+strings.Repeat("x", 150), []byte("PAX fixture"))
+	original := mustBundle(t, tree)
+	got, err := ReadBundle(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Exec["install-root/bin/helper"] || got.Exec["manifest.json"] {
+		t.Fatal("archive executable modes were lost or invented")
+	}
+	if !bytes.Equal(mustBundle(t, got), original) {
+		t.Fatal("read/repack changed original canonical members or bytes")
+	}
+}
+
+func TestReadBundlePreservesEmptyDirectories(t *testing.T) {
+	tree := NewTree("com.example.package-1.2.3")
+	tree.Add("manifest.json", []byte(`{"id":"com.example.package"}`))
+	for _, rel := range []string{"install-root/cache/empty", "provenance", "signatures"} {
+		tree.Dirs[rel] = true
+	}
+	original := mustBundle(t, tree)
+	got, err := ReadBundle(original)
+	if err != nil {
+		t.Fatalf("canonical empty-directory archive was refused: %v", err)
+	}
+	for _, rel := range []string{"install-root", "install-root/cache", "install-root/cache/empty", "provenance", "signatures"} {
+		if !got.Dirs[rel] {
+			t.Fatalf("canonical directory %q was lost", rel)
+		}
+	}
+	if !bytes.Equal(mustBundle(t, got), original) {
+		t.Fatal("empty-directory read/repack changed canonical archive bytes")
+	}
+	// Directories remain outside the package digest, even when empty.
+	if len(got.InstallFiles()) != 0 || PackageHash(got.InstallFiles()) != PackageHash(nil) {
+		t.Fatal("an empty directory changed the install-file digest")
+	}
+}
+
+func TestExplicitDirectoriesKeepTheExistingMemberGuards(t *testing.T) {
+	for _, name := range []string{"file_collision", "case_collision", "traversal", "member_ceiling"} {
+		t.Run(name, func(t *testing.T) {
+			tree := NewTree("root")
+			switch name {
+			case "file_collision":
+				tree.Add("data", []byte("file"))
+				tree.Dirs["data"] = true
+			case "case_collision":
+				tree.Dirs["Data"] = true
+				tree.Dirs["data"] = true
+			case "traversal":
+				tree.Dirs["../escape"] = true
+			case "member_ceiling":
+				for i := 0; i < maxSemanticMembers; i++ {
+					tree.Dirs[fmt.Sprintf("dir-%04d", i)] = true
+				}
+			}
+			if _, err := tree.Members(); err == nil {
+				t.Fatalf("explicit directories bypassed %s guard", name)
+			}
+		})
+	}
+}
+
+func TestReadBundleRejectsMalformedContainers(t *testing.T) {
+	tree := NewTree("root")
+	tree.Add("install-root/data", []byte("payload"))
+	bundle := mustBundle(t, tree)
+	for _, name := range []string{"header", "crc", "truncated", "suffix", "second_stream", "extra_tar", "metadata", "excessive_payload", "oversized_metadata", "symlink", "duplicate", "case_collision"} {
+		t.Run(name, func(t *testing.T) {
+			bad := append([]byte(nil), bundle...)
+			switch name {
+			case "header":
+				bad[9] = 3
+			case "crc":
+				bad[len(bad)-8] ^= 1
+			case "truncated":
+				bad = bad[:len(bad)-1]
+			case "suffix":
+				bad = append(bad, 0)
+			case "second_stream":
+				bad = append(bad, bundle...)
+			default:
+				raw := append([]byte(nil), unwrapGzip(t, bundle)...)
+				switch name {
+				case "extra_tar":
+					raw = append(raw, make([]byte, 512)...)
+				case "metadata":
+					h, err := buildTarHeader("root/", 0, 0o755, tarTypeDirectory)
+					if err != nil {
+						t.Fatal(err)
+					}
+					h[108] = '1' // archive/tar accepts a different owner; the byte court must not.
+					for i := 148; i < 156; i++ {
+						h[i] = ' '
+					}
+					var sum int64
+					for _, b := range h {
+						sum += int64(b)
+					}
+					copy(h[148:], fmt.Sprintf("%06o\x00 ", sum))
+					copy(raw[:512], h[:])
+				case "excessive_payload", "symlink":
+					size, typ := maxRegularPayloadBytes+1, tarTypeRegular
+					if name == "symlink" {
+						size, typ = 0, tar.TypeSymlink
+					}
+					h, err := buildTarHeader("root/install-root/data", size, 0o644, typ)
+					if err != nil {
+						t.Fatal(err)
+					}
+					copy(raw[1024:1536], h[:])
+				case "oversized_metadata":
+					large := NewTree("root")
+					large.Add("manifest.json", bytes.Repeat([]byte("x"), 1<<20+1))
+					raw = unwrapGzip(t, mustBundle(t, large))
+				case "duplicate":
+					raw = append(append(append([]byte(nil), raw[:2048]...), raw[1024:2048]...), raw[2048:]...)
+				case "case_collision":
+					// Bypass Members' writer guard to build the rejected input.
+					var err error
+					raw, err = writeCanonicalTar([]Member{{Path: "root", IsDir: true, Mode: 0o755}, {Path: "root/Data", Mode: 0o644, Content: []byte("a")}, {Path: "root/data", Mode: 0o644, Content: []byte("b")}})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				var err error
+				bad, err = gzipWrap(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := ReadBundle(bad); err == nil {
+				t.Fatalf("accepted malformed %s container", name)
+			}
+		})
+	}
+}
+
 // unwrapGzip asserts the pinned envelope and returns the tar stream.
 func unwrapGzip(t *testing.T, bundle []byte) []byte {
 	t.Helper()

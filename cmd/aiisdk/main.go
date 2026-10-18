@@ -32,7 +32,9 @@ Commands:
               plugin reuses the chain with 'sign -keys <dir>'.
   sign        Sign the staged package with the dev publisher key and
               repack: dist/<id>-<version>.aiiospkg becomes a T1
-              bundle any host proves by pinning the dev root.
+              bundle any host proves by pinning the dev root. Or attach
+              an issued platform signature to an unsigned archive and
+              require the host verifier to prove the exact T3 package.
   revoke      Revoke a signed trust payload in the dev snapshot:
               append its (artifact_kind, payload_sha256), bump
               trust_epoch, re-sign. Default target: the staged

@@ -12,6 +12,19 @@ Use `aiisdk --help` and the examples for the authoring interface. WebAssembly
 guest builds require TinyGo; native examples use Go. Use a development signing
 root for local testing and keep signing private keys outside source repositories.
 
+For authenticated CLI/source downloads and the checksum-signing recipe, see
+[release authentication](scripts/release/README.md). Plain checksum comparison
+does not authenticate a download.
+
+To attach an already issued platform signature without handling private keys,
+use `aiisdk sign -pkg UNSIGNED -platform-signature SIGNATURE -out SIGNED`.
+The host verifier must prove the exact result at T3 before output is written;
+set `AII_OS_BIN` to its binary directory. Unsigned package file bytes and
+executable modes are preserved. This installs or publishes nothing. Platform
+signing can authorize WASM as well as native code; native code still requires
+T3. Use `aiisdk publish -tier T3 -pkg SIGNED -url HTTPS_URL` from the matching
+plugin source to derive its catalog entry.
+
 `aiisdk package` includes optional `LICENSE`, `NOTICE` and
 `THIRD_PARTY_LICENSES` files from the plugin's root directory unchanged in
 `install-root/`. These files are covered by the canonical package hash and

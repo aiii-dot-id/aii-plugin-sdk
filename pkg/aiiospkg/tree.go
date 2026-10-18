@@ -43,10 +43,12 @@ type Tree struct {
 	Files map[string][]byte
 
 	Exec map[string]bool
+
+	Dirs map[string]bool
 }
 
 func NewTree(root string) *Tree {
-	return &Tree{Root: root, Files: map[string][]byte{}, Exec: map[string]bool{}}
+	return &Tree{Root: root, Files: map[string][]byte{}, Exec: map[string]bool{}, Dirs: map[string]bool{}}
 }
 
 func (t *Tree) Add(rel string, content []byte) {
@@ -55,6 +57,18 @@ func (t *Tree) Add(rel string, content []byte) {
 
 func (t *Tree) Members() ([]Member, error) {
 	dirs := map[string]bool{t.Root: true}
+	for rel, present := range t.Dirs {
+		if !present || rel == "" {
+			continue
+		}
+		full := t.Root + "/" + rel
+		dirs[full] = true
+		for i := len(t.Root) + 1; i < len(full); i++ {
+			if full[i] == '/' {
+				dirs[full[:i]] = true
+			}
+		}
+	}
 	var files []Member
 	rels := make([]string, 0, len(t.Files))
 	for rel := range t.Files {
