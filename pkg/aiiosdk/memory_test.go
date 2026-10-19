@@ -4,6 +4,8 @@ package aiiosdk
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +61,89 @@ func TestRecallSendsTheOptionsAndReadsTheHits(t *testing.T) {
 		if !strings.Contains(p, want) {
 			t.Fatalf("params lack %s:\n%s", want, p)
 		}
+	}
+}
+
+func TestRecallPreservesOptionalWarnings(t *testing.T) {
+	for _, answer := range []struct {
+		name      string
+		reply     string
+		status    string
+		matched   int
+		shown     int
+		truncated bool
+		byID      bool
+	}{
+		{"empty", `{"status":"succeeded","operation_result":{"status":"found_nothing","hits":[],"matched":0,"shown":0,"policy":"carrd","truncated":false,"selection_context":{"selection":"relevant","reason":"no_session"}%s}}`, "found_nothing", 0, 0, false, false},
+		{"hits", `{"status":"succeeded","operation_result":{"status":"partial","hits":[{"id":"pm_1","text":"a reusable note"}],"matched":2,"shown":1,"policy":"carrd","truncated":true,"selection_context":{"selection":"relevant","reason":"no_session"}%s}}`, "partial", 2, 1, true, false},
+		{"missing", `{"status":"failed","reasonCode":"MEMORY_NOT_FOUND","operation_result":{"selection_context":{"selection":"relevant","reason":"no_session"}%s}}`, "found_nothing", 0, 0, false, true},
+	} {
+		for _, warning := range []struct {
+			name   string
+			member string
+			want   []string
+		}{
+			{"omitted", "", nil},
+			{"null", `,"warnings": null`, nil},
+			{"empty", `,"warnings":[]`, []string{}},
+			{"reported", `,"warnings":["fuzzy layer: \"words only\" — café","reinforcement not recorded:\nread-only"]`, []string{"fuzzy layer: \"words only\" — café", "reinforcement not recorded:\nread-only"}},
+		} {
+			t.Run(answer.name+"/"+warning.name, func(t *testing.T) {
+				withHost(t, func([]byte) ([]byte, error) {
+					return []byte(fmt.Sprintf(answer.reply, warning.member)), nil
+				})
+				opts := []RecallOption{MemorySelection("relevant")}
+				if answer.byID {
+					opts = append(opts, ByID("pm_absent"))
+				}
+				got, err := Memory.Recall("lesson", opts...)
+				if err != nil || !slices.Equal(got.Warnings, warning.want) {
+					t.Fatalf("warnings=%q want=%q err=%v", got.Warnings, warning.want, err)
+				}
+				if got.Status != answer.status || got.Matched != answer.matched || got.Shown != answer.shown || len(got.Hits) != answer.shown || got.Truncated != answer.truncated {
+					t.Fatalf("warning parsing changed lookup coverage: %+v", got)
+				}
+				if !answer.byID && got.Policy != "carrd" {
+					t.Fatalf("warning parsing changed policy: %+v", got)
+				}
+				if answer.shown > 0 && (got.Hits[0].ID != "pm_1" || got.Hits[0].Text != "a reusable note") {
+					t.Fatalf("warning parsing changed a hit: %+v", got.Hits)
+				}
+				if got.SelectionContext == nil || *got.SelectionContext != (MemorySelectionContext{Selection: "relevant", Reason: "no_session"}) {
+					t.Fatalf("warning parsing changed host scope: %+v", got.SelectionContext)
+				}
+			})
+		}
+	}
+}
+
+func TestRecallRejectsMalformedWarnings(t *testing.T) {
+	for _, raw := range []string{`false`, `42`, `"warning"`, `{}`, `["one",false]`, `["one",null]`, `["one",{}]`} {
+		for _, missing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/missing=%t", raw, missing), func(t *testing.T) {
+				withHost(t, func([]byte) ([]byte, error) {
+					status, reason := "succeeded", ""
+					if missing {
+						status, reason = "failed", `,"reasonCode":"MEMORY_NOT_FOUND"`
+					}
+					return []byte(fmt.Sprintf(`{"status":%q%s,"operation_result":{"status":"found_nothing","hits":[],"matched":0,"shown":0,"warnings":%s}}`, status, reason, raw)), nil
+				})
+				if _, err := Memory.Recall("lesson"); err == nil {
+					t.Fatalf("malformed warnings accepted: %s", raw)
+				}
+			})
+		}
+	}
+}
+
+func TestRecallWarningsDoNotHideSourceFailure(t *testing.T) {
+	withHost(t, func([]byte) ([]byte, error) {
+		return []byte(`{"status":"failed","reasonCode":"MEMORY_SOURCE_UNAVAILABLE","operation_result":{"warnings":false}}`), nil
+	})
+	_, err := Memory.Recall("lesson")
+	var oe *OperationError
+	if !errors.As(err, &oe) || oe.ReasonCode != "MEMORY_SOURCE_UNAVAILABLE" {
+		t.Fatalf("source failure changed: %T %v", err, err)
 	}
 }
 

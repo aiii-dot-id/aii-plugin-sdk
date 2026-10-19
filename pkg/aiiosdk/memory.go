@@ -155,6 +155,8 @@ type RecallResult struct {
 	Policy    string
 	Truncated bool
 
+	Warnings []string
+
 	Meaning       string
 	MeaningDetail string
 	MeaningBasis  string
@@ -182,6 +184,10 @@ func (MemoryClient) Recall(query string, opts ...RecallOption) (RecallResult, er
 				if err != nil {
 					return out, err
 				}
+				out.Warnings, err = memoryRecallWarnings(Object(res.OperationResult))
+				if err != nil {
+					return out, err
+				}
 			}
 			return out, nil
 		}
@@ -189,6 +195,10 @@ func (MemoryClient) Recall(query string, opts ...RecallOption) (RecallResult, er
 	}
 	or := Object(res.OperationResult)
 	out.SelectionContext, err = memorySelectionMetadata(or)
+	if err != nil {
+		return out, err
+	}
+	out.Warnings, err = memoryRecallWarnings(or)
 	if err != nil {
 		return out, err
 	}
@@ -241,6 +251,17 @@ func (MemoryClient) Recall(query string, opts ...RecallOption) (RecallResult, er
 		out.Hits = append(out.Hits, hit)
 	}
 	return out, nil
+}
+
+func memoryRecallWarnings(o Object) ([]string, error) {
+	if raw := o.Raw("warnings"); raw == nil || string(raw) == "null" {
+		return nil, nil
+	}
+	warnings, ok := o.StringArray("warnings")
+	if !ok {
+		return nil, fmt.Errorf("aiiosdk: memory.recall warnings is not an array of strings")
+	}
+	return warnings, nil
 }
 
 func memorySelectionMetadata(o Object) (*MemorySelectionContext, error) {

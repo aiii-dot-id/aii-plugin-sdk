@@ -53,6 +53,12 @@ project-wide notes and reusable lessons. Legacy notes require an explicit
 legacy selection or an older unfiltered call. Results preserve full text,
 context, evidence availability and supersession. Evidence validity identifies
 a retained record; it does not grade the authored lesson or task success.
+
+`RecallResult.Warnings` preserves the host's nonfatal recall diagnostics in
+order, such as a failed fuzzy layer or reinforcement that was not recorded.
+An omitted, null or empty warnings array means no reported warnings; malformed
+warning values fail parsing. Warnings do not change the lookup outcome or scope.
+
 Planning readers can request `InteractionFilter.IncludeDescendants`; incomplete
 historical ancestry is disclosed in the source's availability.
 
