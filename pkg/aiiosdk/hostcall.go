@@ -129,7 +129,14 @@ func decodeHostReply(reply []byte) (*InvokeResult, error) {
 		}
 	}
 	if res.Status != "succeeded" {
-		return res, &OperationError{Status: res.Status, ReasonCode: res.ReasonCode, Reason: res.Reason}
+
+		reason := res.Reason
+		if reason == "" || reason == res.ReasonCode {
+			if detail, ok := Object(res.ExternalReceipt).String("detail"); ok && detail != "" {
+				reason = detail
+			}
+		}
+		return res, &OperationError{Status: res.Status, ReasonCode: res.ReasonCode, Reason: reason}
 	}
 	return res, nil
 }

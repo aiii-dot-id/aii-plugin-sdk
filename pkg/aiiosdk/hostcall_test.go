@@ -319,3 +319,20 @@ func TestAnAbsentStatusTakesTheBooleansWord(t *testing.T) {
 		t.Fatalf("ok alone: got %+v %v", res, err)
 	}
 }
+
+// A refusal carries the host's words. The broker spells the code in reason
+// and says why in its receipt's detail; read as the bare code, a Memory
+// store refused after work was delivered reached an identity as
+// OPERATION_ARGUMENT_INVALID with nothing to correct (2026-10-20).
+func TestARefusalCarriesTheReceiptsDetail(t *testing.T) {
+	_, err := decodeHostReply([]byte(`{"status":"denied","ok":false,"success":false,"reason":"OPERATION_ARGUMENT_INVALID","reasonCode":"OPERATION_ARGUMENT_INVALID","external_receipt":{"success":false,"detail":"scoped memory writes require a resolvable executing work session"}}`))
+	oe, ok := asOperationError(err)
+	if !ok || oe.ReasonCode != "OPERATION_ARGUMENT_INVALID" || oe.Reason != "scoped memory writes require a resolvable executing work session" {
+		t.Fatalf("the refusal lost the host's words: %#v", err)
+	}
+	// A reply that says why itself keeps its own words.
+	_, err = decodeHostReply([]byte(`{"status":"failed","ok":false,"reason":"the plugin's own words","reasonCode":"X_FAILED","external_receipt":{"detail":"receipt words"}}`))
+	if oe, ok := asOperationError(err); !ok || oe.Reason != "the plugin's own words" {
+		t.Fatalf("a reply's own reason was replaced: %#v", err)
+	}
+}

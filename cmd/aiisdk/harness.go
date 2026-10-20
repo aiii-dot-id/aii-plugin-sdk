@@ -190,12 +190,21 @@ func succeeded(operationResult interface{}) json.RawMessage {
 }
 
 func failed(reason string, operationResult interface{}) json.RawMessage {
+	return failedSaying(reason, "", operationResult)
+}
+
+func failedSaying(reason, detail string, operationResult interface{}) json.RawMessage {
 	or := []byte("null")
 	if operationResult != nil {
 		or, _ = json.Marshal(operationResult)
 	}
 	q, _ := json.Marshal(reason)
-	return json.RawMessage(`{"success":false,"ok":false,"status":"failed","reason":` + string(q) + `,"reasonCode":` + string(q) + `,"reason_code":` + string(q) + `,"operation_result":` + string(or) + `,"external_receipt":` + harnessReceipt + `}`)
+	receipt := harnessReceipt
+	if detail != "" {
+		d, _ := json.Marshal(detail)
+		receipt = strings.TrimSuffix(harnessReceipt, "}") + `,"detail":` + string(d) + `}`
+	}
+	return json.RawMessage(`{"success":false,"ok":false,"status":"failed","reason":` + string(q) + `,"reasonCode":` + string(q) + `,"reason_code":` + string(q) + `,"operation_result":` + string(or) + `,"external_receipt":` + receipt + `}`)
 }
 
 func (h *harness) answer(method string, params json.RawMessage) (json.RawMessage, json.RawMessage) {

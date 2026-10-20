@@ -86,7 +86,7 @@ func harnessMemoryArguments(raw json.RawMessage, dst interface{}) bool {
 
 func (h *harness) memoryContextUnavailable(detail string) (json.RawMessage, json.RawMessage) {
 	h.observe("memory -> refused: %s", detail)
-	return failed("OPERATION_ARGUMENT_INVALID", map[string]interface{}{"detail": detail, "scope": "harness"}), nil
+	return failedSaying("OPERATION_ARGUMENT_INVALID", detail, map[string]interface{}{"detail": detail, "scope": "harness"}), nil
 }
 
 func harnessMemoryContext() map[string]interface{} {
