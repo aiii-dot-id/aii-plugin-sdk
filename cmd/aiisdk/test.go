@@ -213,9 +213,11 @@ rate than the engine answers) leaves the run INCOMPLETE (exit 3). A
 native plugin (-native, or no wasm variant declared) is run as the host
 runs it: its carrier for this machine is started with exactly
 SEV_PLUGIN_SOCKET, SEV_PLUGIN_ID, AII_MODELS_DIR (-models-dir) and
-AII_RUNTIME_ROOT (-runtime-root), its ready line (with sdk=) is awaited,
-and its checks run; nothing is fetched, and the carrier's own probe is
-not a check.
+AII_RUNTIME_ROOT (-runtime-root), its ready line is awaited where its
+variant declares an accelerator profile (and must then carry
+models_loaded=, accelerator= and probe_ms=) or it is a resident engine
+(a host waits for no line of any other), and its checks run;
+nothing is fetched, and the carrier's own probe is not a check.
 
 Case file shape:
   {"name": "…", "operation": "core.echo", "arguments": {…},

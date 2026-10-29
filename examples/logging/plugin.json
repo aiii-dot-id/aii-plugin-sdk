@@ -55,6 +55,15 @@
       "default": 200,
       "minimum": 10,
       "maximum": 5000
+    },
+    {
+      "key": "max_read_bytes",
+      "type": "integer",
+      "title": "Largest log read",
+      "description": "how many bytes of the log log.read reads at most; a larger log is refused with LOG_TOO_LARGE and left as it is",
+      "default": 4194304,
+      "minimum": 65536,
+      "maximum": 16777216
     }
   ],
   "subscriptions": [

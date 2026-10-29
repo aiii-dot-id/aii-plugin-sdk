@@ -16,6 +16,12 @@ Both take the host checkout from `AII_OS_DIR` (default: a sibling
 TinyGo from `TINYGO` (default: `tinygo` on PATH), and skip with a clear
 message when one is missing. A skip is not a pass.
 
+`make acceptance` proves the examples side by side once its shared setup
+stands, as many at once as `go test -parallel` allows: the processor
+count by default, which on a large machine holds several GiB at its
+peak. Bound it with `GOFLAGS=-parallel=N make acceptance`; the proof is
+the same at any width.
+
 The platform-attachment proof needs an already built host verifier, not
 production keys. It generates a throwaway root and signed status, verifies
 WASM and native T3 packages, and proves actual signature/layout rejection:

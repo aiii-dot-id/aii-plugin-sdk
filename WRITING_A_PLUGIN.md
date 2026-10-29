@@ -1839,8 +1839,12 @@ it: the carrier your variant for this machine names is started with
 exactly the environment the host gives it — `SEV_PLUGIN_SOCKET`,
 `SEV_PLUGIN_ID`, and `AII_MODELS_DIR` and `AII_RUNTIME_ROOT` from
 `-models-dir` and `-runtime-root` (or the same variables set for the
-command) — its ready line, naming the kit that built it (`sdk=`), is
-awaited, and its checks run. Nothing is fetched, and your carrier's own
+command) — its ready line is awaited where your variant declares an
+accelerator profile or your plugin is a resident engine (a host waits
+for no line of any other native plugin, so a plain `Serve` is started
+and sent its checks at once), held to what a host holds it to (a
+profile's line carries the three fields of section 15; `sdk=` is
+reported where present and required nowhere), and its checks run. Nothing is fetched, and your carrier's own
 warm probe is its readiness, not a check. A resident engine is started
 as the host starts one, with its session lane and its audio pair, and
 its session checks run as above, `"check": true` in every open; one

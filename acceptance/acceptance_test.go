@@ -102,8 +102,10 @@ func runIn(t *testing.T, dir string, env []string, name string, args ...string) 
 	return string(out)
 }
 
-// TestAcceptance is the whole proof, in order. A failure at any stage
-// stops the run with the offending command's output.
+// TestAcceptance is the whole proof, in order, but for the examples: once
+// the shared setup stands, each example's block runs beside the others. A
+// failure at any stage stops the run with the offending command's output;
+// a failed example lets the other examples finish first, each with its own.
 func TestAcceptance(t *testing.T) {
 	src := sourceRepo(t)
 	sib := sibling(t)
@@ -237,207 +239,238 @@ func TestAcceptance(t *testing.T) {
 		}
 	}
 
-	// ---- 8i. THE NATIVE MATRIX: the skeleton built for three desktop platforms, packaged as one native variant each, and refused by the host below T3 — native code is the platform signature's lane. ----
-	{
-		stage(t, "examples/native-skel: build for linux/x86_64, macos/arm64, windows/x86_64; aiisdk package; aii plugin verify refuses below T3 (WASM_BASELINE_MISSING)")
-		exDir := filepath.Join(clone, "examples", "native-skel")
-		for _, target := range [][2]string{{"linux", "amd64"}, {"darwin", "arm64"}, {"windows", "amd64"}} {
-			out := map[[2]string]string{{"linux", "amd64"}: "dist/native-skel-linux-x86_64", {"darwin", "arm64"}: "dist/native-skel-macos-arm64", {"windows", "amd64"}: "dist/native-skel-windows-x86_64.exe"}[target]
-			runIn(t, exDir, []string{"PATH=" + goDir + string(os.PathListSeparator) + os.Getenv("PATH"), "GOTOOLCHAIN=local", "GOFLAGS=-buildvcs=false", "CGO_ENABLED=0", "GOOS=" + target[0], "GOARCH=" + target[1], "GOPROXY=off"}, filepath.Join(goDir, "go"), "build", "-o", out, ".")
-		}
-		runIn(t, exDir, []string{"GOPROXY=off"}, aiisdk, "package")
-		nativePkg := filepath.Join(exDir, "dist", "org.example.native-skel-0.1.0.aiiospkg")
-		// The host's tier contract: T0 needs a wasm baseline, and a native
-		// variant is admitted only at T3 — the platform's signature, which the
-		// kit never mints. The honest word for an unsigned native-only package
-		// is therefore a refusal with that reason, not a T0 pass.
-		vcmd := exec.Command(aii, "plugin", "verify", nativePkg)
-		vcmd.Dir = exDir
-		vbytes, verr := vcmd.CombinedOutput()
-		vout := string(vbytes)
-		if verr == nil || !strings.Contains(vout, "WASM_BASELINE_MISSING") {
-			t.Fatalf("an unsigned native-only package is refused below T3 with WASM_BASELINE_MISSING (err=%v):\n%s", verr, vout)
-		}
-		for _, rel := range []string{"variants/linux-x86_64-native/plugin", "variants/macos-arm64-native/plugin", "variants/windows-x86_64-native/plugin"} {
-			matches, _ := filepath.Glob(filepath.Join(exDir, "dist", "pkg", "org.example.native-skel-0.1.0", "install-root", rel+"*"))
-			if len(matches) == 0 {
-				t.Fatalf("the package carries the %s artifact", rel)
+	// ---- 8c-8l. THE EXAMPLES, side by side. ----
+	// Each block below is one example's whole proof and stands alone: it
+	// reads the clone, the CLI and the oracles built above, and writes only
+	// under its own examples/<name>. So the blocks run as parallel subtests,
+	// as many at once as -parallel allows (the processors, by default); each
+	// names its stage and reports its own failure whatever the others do.
+	// The group returns when every block has finished, and a failed block
+	// stops the run there, as a failed stage always has: the signing stages
+	// below change the scaffold's .keys and stay after the group, in order.
+	examples := t.Run("examples", func(t *testing.T) {
+		// ---- 8i. THE NATIVE MATRIX: the skeleton built for three desktop platforms, packaged as one native variant each, and refused by the host below T3 — native code is the platform signature's lane. ----
+		t.Run("native-skel", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/native-skel: build for linux/x86_64, macos/arm64, windows/x86_64; aiisdk package; aii plugin verify refuses below T3 (WASM_BASELINE_MISSING)")
+			exDir := filepath.Join(clone, "examples", "native-skel")
+			for _, target := range [][2]string{{"linux", "amd64"}, {"darwin", "arm64"}, {"windows", "amd64"}} {
+				out := map[[2]string]string{{"linux", "amd64"}: "dist/native-skel-linux-x86_64", {"darwin", "arm64"}: "dist/native-skel-macos-arm64", {"windows", "amd64"}: "dist/native-skel-windows-x86_64.exe"}[target]
+				runIn(t, exDir, []string{"PATH=" + goDir + string(os.PathListSeparator) + os.Getenv("PATH"), "GOTOOLCHAIN=local", "GOFLAGS=-buildvcs=false", "CGO_ENABLED=0", "GOOS=" + target[0], "GOARCH=" + target[1], "GOPROXY=off"}, filepath.Join(goDir, "go"), "build", "-o", out, ".")
 			}
-		}
-	}
+			runIn(t, exDir, []string{"GOPROXY=off"}, aiisdk, "package")
+			nativePkg := filepath.Join(exDir, "dist", "org.example.native-skel-0.1.0.aiiospkg")
+			// The host's tier contract: T0 needs a wasm baseline, and a native
+			// variant is admitted only at T3 — the platform's signature, which the
+			// kit never mints. The honest word for an unsigned native-only package
+			// is therefore a refusal with that reason, not a T0 pass.
+			vcmd := exec.Command(aii, "plugin", "verify", nativePkg)
+			vcmd.Dir = exDir
+			vbytes, verr := vcmd.CombinedOutput()
+			vout := string(vbytes)
+			if verr == nil || !strings.Contains(vout, "WASM_BASELINE_MISSING") {
+				t.Fatalf("an unsigned native-only package is refused below T3 with WASM_BASELINE_MISSING (err=%v):\n%s", verr, vout)
+			}
+			for _, rel := range []string{"variants/linux-x86_64-native/plugin", "variants/macos-arm64-native/plugin", "variants/windows-x86_64-native/plugin"} {
+				matches, _ := filepath.Glob(filepath.Join(exDir, "dist", "pkg", "org.example.native-skel-0.1.0", "install-root", rel+"*"))
+				if len(matches) == 0 {
+					t.Fatalf("the package carries the %s artifact", rel)
+				}
+			}
+		})
 
-	// ---- 8j. THE SPEECH ENGINE SHAPE: the resident-session skeleton built for three desktop platforms, packaged as one native variant each with the seven controls as its declared operations, and refused by the host below T3. ----
-	{
-		stage(t, "examples/voice-skel: build for linux/x86_64, macos/arm64, windows/x86_64; aiisdk package; aii plugin verify refuses below T3 (WASM_BASELINE_MISSING)")
-		exDir := filepath.Join(clone, "examples", "voice-skel")
-		for _, target := range [][2]string{{"linux", "amd64"}, {"darwin", "arm64"}, {"windows", "amd64"}} {
-			out := map[[2]string]string{{"linux", "amd64"}: "dist/voice-skel-linux-x86_64", {"darwin", "arm64"}: "dist/voice-skel-macos-arm64", {"windows", "amd64"}: "dist/voice-skel-windows-x86_64.exe"}[target]
-			runIn(t, exDir, []string{"PATH=" + goDir + string(os.PathListSeparator) + os.Getenv("PATH"), "GOTOOLCHAIN=local", "GOFLAGS=-buildvcs=false", "CGO_ENABLED=0", "GOOS=" + target[0], "GOARCH=" + target[1], "GOPROXY=off"}, filepath.Join(goDir, "go"), "build", "-o", out, ".")
-		}
-		runIn(t, exDir, []string{"GOPROXY=off"}, aiisdk, "package")
-		voicePkg := filepath.Join(exDir, "dist", "com.example.voice-skel-0.1.0.aiiospkg")
-		vcmd := exec.Command(aii, "plugin", "verify", voicePkg)
-		vcmd.Dir = exDir
-		vbytes, verr := vcmd.CombinedOutput()
-		vout := string(vbytes)
-		if verr == nil || !strings.Contains(vout, "WASM_BASELINE_MISSING") {
-			t.Fatalf("an unsigned native-only voice package is refused below T3 with WASM_BASELINE_MISSING (err=%v):\n%s", verr, vout)
-		}
-		// The descriptor emission named the seven controls — the host reads
-		// them as the session's controls, never as tools.
-		schema, err := os.ReadFile(filepath.Join(exDir, "dist", "pkg", "com.example.voice-skel-0.1.0", "install-root", "interfaces", "speech.session.v1.schema.json"))
-		if err != nil {
-			t.Fatalf("the package carries the descriptor emission: %v", err)
-		}
-		for _, op := range []string{"speech.session.open", "speech.session.synthesize", "speech.session.cancel_synthesis", "speech.session.stop_playback", "speech.session.finish_input", "speech.session.close", "speech.session.status"} {
-			if !strings.Contains(string(schema), `"`+op+`"`) {
-				t.Fatalf("the descriptor emission names %s", op)
+		// ---- 8j. THE SPEECH ENGINE SHAPE: the resident-session skeleton built for three desktop platforms, packaged as one native variant each with the seven controls as its declared operations, and refused by the host below T3. ----
+		t.Run("voice-skel", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/voice-skel: build for linux/x86_64, macos/arm64, windows/x86_64; aiisdk package; aii plugin verify refuses below T3 (WASM_BASELINE_MISSING)")
+			exDir := filepath.Join(clone, "examples", "voice-skel")
+			for _, target := range [][2]string{{"linux", "amd64"}, {"darwin", "arm64"}, {"windows", "amd64"}} {
+				out := map[[2]string]string{{"linux", "amd64"}: "dist/voice-skel-linux-x86_64", {"darwin", "arm64"}: "dist/voice-skel-macos-arm64", {"windows", "amd64"}: "dist/voice-skel-windows-x86_64.exe"}[target]
+				runIn(t, exDir, []string{"PATH=" + goDir + string(os.PathListSeparator) + os.Getenv("PATH"), "GOTOOLCHAIN=local", "GOFLAGS=-buildvcs=false", "CGO_ENABLED=0", "GOOS=" + target[0], "GOARCH=" + target[1], "GOPROXY=off"}, filepath.Join(goDir, "go"), "build", "-o", out, ".")
 			}
-		}
-	}
+			runIn(t, exDir, []string{"GOPROXY=off"}, aiisdk, "package")
+			voicePkg := filepath.Join(exDir, "dist", "com.example.voice-skel-0.1.0.aiiospkg")
+			vcmd := exec.Command(aii, "plugin", "verify", voicePkg)
+			vcmd.Dir = exDir
+			vbytes, verr := vcmd.CombinedOutput()
+			vout := string(vbytes)
+			if verr == nil || !strings.Contains(vout, "WASM_BASELINE_MISSING") {
+				t.Fatalf("an unsigned native-only voice package is refused below T3 with WASM_BASELINE_MISSING (err=%v):\n%s", verr, vout)
+			}
+			// The descriptor emission named the seven controls — the host reads
+			// them as the session's controls, never as tools.
+			schema, err := os.ReadFile(filepath.Join(exDir, "dist", "pkg", "com.example.voice-skel-0.1.0", "install-root", "interfaces", "speech.session.v1.schema.json"))
+			if err != nil {
+				t.Fatalf("the package carries the descriptor emission: %v", err)
+			}
+			for _, op := range []string{"speech.session.open", "speech.session.synthesize", "speech.session.cancel_synthesis", "speech.session.stop_playback", "speech.session.finish_input", "speech.session.close", "speech.session.status"} {
+				if !strings.Contains(string(schema), `"`+op+`"`) {
+					t.Fatalf("the descriptor emission names %s", op)
+				}
+			}
+		})
 
-	// ---- 8g. THE LOGGING PLUGIN AND THE MCP CONNECTOR: events delivered and read back; tools published from a list. ----
-	for _, ex := range []struct {
-		dir    string
-		grants []string
-		wants  []string
-	}{
-		{"logging", nil, []string{"PASS  case a delivered tool event becomes a line", "PASS  case the log reads back the recent lines", "PASS  case a call without a topic is not an event", "RESULT: PASS"}},
-		{"mcp-connector", []string{"-grant", "tools"}, []string{"PASS  case a server's tool list is published", "PASS  case a published tool's call is forwarded and denied without a grant", "PASS  case refreshing from the server is denied without a grant", "RESULT: PASS"}},
-	} {
-		stage(t, "examples/%s: aiisdk build, then aiisdk test %v", ex.dir, ex.grants)
-		exDir := filepath.Join(clone, "examples", ex.dir)
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		args := append([]string{"test", "-skip-build"}, ex.grants...)
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, args...)
-		for _, want := range ex.wants {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/%s: aiisdk test must report %q:\n%s", ex.dir, want, out)
-			}
+		// ---- 8g. THE LOGGING PLUGIN AND THE MCP CONNECTOR: events delivered and read back; tools published from a list. ----
+		for _, ex := range []struct {
+			dir    string
+			grants []string
+			wants  []string
+		}{
+			{"logging", nil, []string{"PASS  case a delivered tool event becomes a line", "PASS  case the log reads back the recent lines", "PASS  case a call without a topic is not an event", "RESULT: PASS"}},
+			{"mcp-connector", []string{"-grant", "tools"}, []string{"PASS  case a server's tool list is published", "PASS  case a published tool's call is forwarded and denied without a grant", "PASS  case refreshing from the server is denied without a grant", "RESULT: PASS"}},
+		} {
+			t.Run(ex.dir, func(t *testing.T) {
+				t.Parallel()
+				stage(t, "examples/%s: aiisdk build, then aiisdk test %v", ex.dir, ex.grants)
+				exDir := filepath.Join(clone, "examples", ex.dir)
+				runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+				args := append([]string{"test", "-skip-build"}, ex.grants...)
+				out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, args...)
+				for _, want := range ex.wants {
+					if !strings.Contains(out, want) {
+						t.Fatalf("examples/%s: aiisdk test must report %q:\n%s", ex.dir, want, out)
+					}
+				}
+				if ex.dir == "logging" {
+					if _, err := os.Stat(filepath.Join(clone, "examples", "logging", "dist", "pkg", "com.aiii.examples.logging-0.1.0", "install-root", "subscriptions.json")); err != nil {
+						t.Fatalf("the logging package carries its subscriptions: %v", err)
+					}
+				}
+			})
 		}
-	}
-	if _, err := os.Stat(filepath.Join(clone, "examples", "logging", "dist", "pkg", "com.aiii.examples.logging-0.1.0", "install-root", "subscriptions.json")); err != nil {
-		t.Fatalf("the logging package carries its subscriptions: %v", err)
-	}
 
-	// ---- 8f. THE SMS ADAPTER: built from the clone; describe, an inbound webhook, the refusals. ----
-	{
-		stage(t, "examples/twilio-sms: aiisdk build, then aiisdk test with no grant")
-		exDir := filepath.Join(clone, "examples", "twilio-sms")
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
-		for _, want := range []string{"PASS  case the adapter names its channel and receives by webhook", "PASS  case an inbound Twilio webhook becomes an arrival and a TwiML reply", "PASS  case a body that is not a Twilio message is refused", "PASS  case sending is denied without a grant", "PASS  case receive says this adapter is push", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/twilio-sms: aiisdk test must report %q:\n%s", want, out)
+		// ---- 8f. THE SMS ADAPTER: built from the clone; describe, an inbound webhook, the refusals. ----
+		t.Run("twilio-sms", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/twilio-sms: aiisdk build, then aiisdk test with no grant")
+			exDir := filepath.Join(clone, "examples", "twilio-sms")
+			runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+			out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
+			for _, want := range []string{"PASS  case the adapter names its channel and receives by webhook", "PASS  case an inbound Twilio webhook becomes an arrival and a TwiML reply", "PASS  case a body that is not a Twilio message is refused", "PASS  case sending is denied without a grant", "PASS  case receive says this adapter is push", "RESULT: PASS"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("examples/twilio-sms: aiisdk test must report %q:\n%s", want, out)
+				}
 			}
-		}
-		if _, err := os.Stat(filepath.Join(exDir, "dist", "pkg", "com.aiii.examples.twilio-sms-0.2.0", "install-root", "webhooks.json")); err != nil {
-			t.Fatalf("the package carries the webhook declaration: %v", err)
-		}
-	}
+			if _, err := os.Stat(filepath.Join(exDir, "dist", "pkg", "com.aiii.examples.twilio-sms-0.2.0", "install-root", "webhooks.json")); err != nil {
+				t.Fatalf("the package carries the webhook declaration: %v", err)
+			}
+		})
 
-	// ---- 8g. THE TELEGRAM ADAPTER: built from the clone; describe, the address and token refusals, the denials without a grant. ----
-	{
-		stage(t, "examples/telegram: aiisdk build, then aiisdk test with no grant")
-		exDir := filepath.Join(clone, "examples", "telegram")
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
-		for _, want := range []string{"PASS  case the adapter names its channel and receives by long poll within a budget", "PASS  case an address that is not a chat id or @username is refused before any call", "PASS  case sending without the bot_token handle is refused by name", "PASS  case sending is denied without a grant", "PASS  case receiving is denied without a grant, and dials nothing", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/telegram: aiisdk test must report %q:\n%s", want, out)
+		// ---- 8g. THE TELEGRAM ADAPTER: built from the clone; describe, the address and token refusals, the denials without a grant. ----
+		t.Run("telegram", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/telegram: aiisdk build, then aiisdk test with no grant")
+			exDir := filepath.Join(clone, "examples", "telegram")
+			runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+			out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
+			for _, want := range []string{"PASS  case the adapter names its channel and receives by long poll within a budget", "PASS  case an address that is not a chat id or @username is refused before any call", "PASS  case sending without the bot_token handle is refused by name", "PASS  case sending is denied without a grant", "PASS  case receiving is denied without a grant, and dials nothing", "RESULT: PASS"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("examples/telegram: aiisdk test must report %q:\n%s", want, out)
+				}
 			}
-		}
-	}
+		})
 
-	// ---- 8h. THE CALENDAR CONNECTOR: built from the clone; the handle refusal, the denials without a grant, the writes waiting for the operator, the zone's rules in the guest. ----
-	{
-		stage(t, "examples/google-calendar: aiisdk build, then aiisdk test with no grant")
-		exDir := filepath.Join(clone, "examples", "google-calendar")
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
-		for _, want := range []string{"PASS  case today without the google handle is refused by name", "PASS  case today is denied without a grant, and dials nothing", "PASS  case upcoming is denied without a grant", "PASS  case a create the operator has not confirmed is refused before anything is asked", "PASS  case a create at a time the clock skips is refused by the zone's own rules, before any call", "PASS  case a confirmed create reaches the call, and is denied without a grant", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/google-calendar: aiisdk test must report %q:\n%s", want, out)
+		// ---- 8h. THE CALENDAR CONNECTOR: built from the clone; the handle refusal, the denials without a grant, the writes waiting for the operator, the zone's rules in the guest. ----
+		t.Run("google-calendar", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/google-calendar: aiisdk build, then aiisdk test with no grant")
+			exDir := filepath.Join(clone, "examples", "google-calendar")
+			runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+			out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
+			for _, want := range []string{"PASS  case today without the google handle is refused by name", "PASS  case today is denied without a grant, and dials nothing", "PASS  case upcoming is denied without a grant", "PASS  case a create the operator has not confirmed is refused before anything is asked", "PASS  case a create at a time the clock skips is refused by the zone's own rules, before any call", "PASS  case a confirmed create reaches the call, and is denied without a grant", "RESULT: PASS"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("examples/google-calendar: aiisdk test must report %q:\n%s", want, out)
+				}
 			}
-		}
-	}
+		})
 
-	// ---- 8k. THE GMAIL CONNECTOR: built from the clone; the handle refusal, the denials without a grant, a draft that needs no operator, the send waiting for the operator, the headers a card cannot show refused in the guest. ----
-	{
-		stage(t, "examples/gmail: aiisdk build, then aiisdk test with no grant")
-		exDir := filepath.Join(clone, "examples", "gmail")
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
-		for _, want := range []string{"PASS  case a search without the google handle is refused by name", "PASS  case a search is denied without a grant, and dials nothing", "PASS  case a draft whose subject smuggles a header after a line break is refused before any call", "PASS  case a draft needs no operator, reaches the call, and is denied without a grant", "PASS  case a send the operator has not confirmed is refused before anything is asked", "PASS  case a confirmed send with a second address inside one recipient is refused before any call", "PASS  case a confirmed send naming a bcc the card cannot show is refused before any call", "PASS  case a confirmed send saves its draft first, and is denied without a grant", "PASS  case a setup the operator has not confirmed is refused before anything is created", "PASS  case a Pub/Sub push is decoded by the wasm guest", "PASS  confirmation", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/gmail: aiisdk test must report %q:\n%s", want, out)
+		// ---- 8k. THE GMAIL CONNECTOR: built from the clone; the handle refusal, the denials without a grant, a draft that needs no operator, the send waiting for the operator, the headers a card cannot show refused in the guest. ----
+		t.Run("gmail", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/gmail: aiisdk build, then aiisdk test with no grant")
+			exDir := filepath.Join(clone, "examples", "gmail")
+			runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+			out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
+			for _, want := range []string{"PASS  case a search without the google handle is refused by name", "PASS  case a search is denied without a grant, and dials nothing", "PASS  case a draft whose subject smuggles a header after a line break is refused before any call", "PASS  case a draft needs no operator, reaches the call, and is denied without a grant", "PASS  case a send the operator has not confirmed is refused before anything is asked", "PASS  case a confirmed send with a second address inside one recipient is refused before any call", "PASS  case a confirmed send naming a bcc the card cannot show is refused before any call", "PASS  case a confirmed send saves its draft first, and is denied without a grant", "PASS  case a setup the operator has not confirmed is refused before anything is created", "PASS  case a Pub/Sub push is decoded by the wasm guest", "PASS  confirmation", "RESULT: PASS"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("examples/gmail: aiisdk test must report %q:\n%s", want, out)
+				}
 			}
-		}
-	}
+		})
 
-	// ---- 8e. THE DOCUMENT PLUGIN: built from the clone; the identity sandbox read into RING4, the private index, the refusals. ----
-	{
-		stage(t, "examples/document-ingest: aiisdk build, then aiisdk test -grant kv -grant files=sample")
-		exDir := filepath.Join(clone, "examples", "document-ingest")
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build", "-grant", "kv", "-grant", "files=sample")
-		for _, want := range []string{"PASS  case the identity's sandbox is listed", "PASS  case a file from the identity's sandbox is stored in chunks", "PASS  case recall finds the chunk about the ledger", "PASS  case a missing file is an honest failure", "PASS  case a path that leaves the sandbox is refused before anything is opened", "PASS  case an absolute path outside the sandbox is refused", "PASS  case a file ingested again in fewer chunks leaves none of the old ones behind", "PASS  case recall scans the one chunk the file now is", "PASS  case a chunk is cut by characters, never inside one", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/document-ingest: aiisdk test must report %q:\n%s", want, out)
+		// ---- 8e. THE DOCUMENT PLUGIN: built from the clone; the identity sandbox read into RING4, the private index, the refusals. ----
+		t.Run("document-ingest", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/document-ingest: aiisdk build, then aiisdk test -grant kv -grant files=sample")
+			exDir := filepath.Join(clone, "examples", "document-ingest")
+			runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+			out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build", "-grant", "kv", "-grant", "files=sample")
+			for _, want := range []string{"PASS  case the identity's sandbox is listed", "PASS  case a file from the identity's sandbox is stored in chunks", "PASS  case recall finds the chunk about the ledger", "PASS  case a missing file is an honest failure", "PASS  case a path that leaves the sandbox is refused before anything is opened", "PASS  case an absolute path outside the sandbox is refused", "PASS  case a file ingested again in fewer chunks leaves none of the old ones behind", "PASS  case recall scans the one chunk the file now is", "PASS  case a chunk is cut by characters, never inside one", "RESULT: PASS"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("examples/document-ingest: aiisdk test must report %q:\n%s", want, out)
+				}
 			}
-		}
-	}
+		})
 
-	// ---- 8d. THE CONNECTOR: built from the clone; hermetic cases prove the verbs' honesty without the network. ----
-	{
-		stage(t, "examples/github-issues: aiisdk build, then aiisdk test with no grant (every call denied by name)")
-		exDir := filepath.Join(clone, "examples", "github-issues")
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
-		for _, want := range []string{"PASS  case listing issues is denied without a grant", "PASS  case creating an issue is denied without a grant", "PASS  case streaming issues is denied without a grant", "PASS  case no repository set is an honest failure", "PASS  case an issue without a title is refused before any call", "PASS  confirmation", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/github-issues: aiisdk test must report %q:\n%s", want, out)
+		// ---- 8d. THE CONNECTOR: built from the clone; hermetic cases prove the verbs' honesty without the network. ----
+		t.Run("github-issues", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/github-issues: aiisdk build, then aiisdk test with no grant (every call denied by name)")
+			exDir := filepath.Join(clone, "examples", "github-issues")
+			runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+			out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
+			for _, want := range []string{"PASS  case listing issues is denied without a grant", "PASS  case creating an issue is denied without a grant", "PASS  case streaming issues is denied without a grant", "PASS  case no repository set is an honest failure", "PASS  case an issue without a title is refused before any call", "PASS  confirmation", "RESULT: PASS"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("examples/github-issues: aiisdk test must report %q:\n%s", want, out)
+				}
 			}
-		}
-	}
+		})
 
-	// ---- 8c. THE MEMORY SLICE: both architectures, built from the clone, proven by aiisdk test. ----
-	for _, ex := range []struct {
-		dir    string
-		grants []string
-		also   []string // cases only this example has
-	}{
-		{"memory-embeddings", []string{"-grant", "kv", "-grant", "embeddings"}, []string{"PASS  case a memory stored under another model is passed over, and counted", "PASS  case and is found again under the model that stored it"}},
-		{"memory-keywords", []string{"-grant", "kv"}, nil},
-	} {
-		exDir := filepath.Join(clone, "examples", ex.dir)
-		stage(t, "examples/%s: aiisdk build, then aiisdk test %s", ex.dir, strings.Join(ex.grants, " "))
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		args := append([]string{"test", "-skip-build"}, ex.grants...)
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, args...)
-		for _, want := range []string{"PASS  case remember stores the first text", "PASS  case recall ranks the text about truth first", "PASS  case forget removes m:2", "PASS  case an empty query is refused", "PASS  case recall honors the operator's limit", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/%s: aiisdk test must report %q:\n%s", ex.dir, want, out)
-			}
+		// ---- 8c. THE MEMORY SLICE: both architectures, built from the clone, proven by aiisdk test. ----
+		for _, ex := range []struct {
+			dir    string
+			grants []string
+			also   []string // cases only this example has
+		}{
+			{"memory-embeddings", []string{"-grant", "kv", "-grant", "embeddings"}, []string{"PASS  case a memory stored under another model is passed over, and counted", "PASS  case and is found again under the model that stored it"}},
+			{"memory-keywords", []string{"-grant", "kv"}, nil},
+		} {
+			t.Run(ex.dir, func(t *testing.T) {
+				t.Parallel()
+				exDir := filepath.Join(clone, "examples", ex.dir)
+				stage(t, "examples/%s: aiisdk build, then aiisdk test %s", ex.dir, strings.Join(ex.grants, " "))
+				runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+				args := append([]string{"test", "-skip-build"}, ex.grants...)
+				out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, args...)
+				for _, want := range []string{"PASS  case remember stores the first text", "PASS  case recall ranks the text about truth first", "PASS  case forget removes m:2", "PASS  case an empty query is refused", "PASS  case recall honors the operator's limit", "RESULT: PASS"} {
+					if !strings.Contains(out, want) {
+						t.Fatalf("examples/%s: aiisdk test must report %q:\n%s", ex.dir, want, out)
+					}
+				}
+				for _, want := range ex.also {
+					if !strings.Contains(out, want) {
+						t.Fatalf("examples/%s: aiisdk test must report %q:\n%s", ex.dir, want, out)
+					}
+				}
+			})
 		}
-		for _, want := range ex.also {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/%s: aiisdk test must report %q:\n%s", ex.dir, want, out)
-			}
-		}
-	}
 
-	// ---- 8l. THE COMPAT PLUGIN: built from the clone; every operation answers its refusal as its own result. The host's compatibility suite proves the granted paths. ----
-	{
-		stage(t, "examples/compat: aiisdk build, then aiisdk test with no grant")
-		exDir := filepath.Join(clone, "examples", "compat")
-		runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
-		out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
-		for _, want := range []string{"PASS  case remember is denied without a grant, and says so by the host's code", "PASS  case recall is denied without a grant", "PASS  case interactions is denied by a stand-in that serves no history", "PASS  case overreach is denied, and returns the denial", "PASS  case spin is denied before it spins", "PASS  case a remember with no text is refused before any host call", "RESULT: PASS"} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("examples/compat: aiisdk test must report %q:\n%s", want, out)
+		// ---- 8l. THE COMPAT PLUGIN: built from the clone; every operation answers its refusal as its own result. The host's compatibility suite proves the granted paths. ----
+		t.Run("compat", func(t *testing.T) {
+			t.Parallel()
+			stage(t, "examples/compat: aiisdk build, then aiisdk test with no grant")
+			exDir := filepath.Join(clone, "examples", "compat")
+			runIn(t, exDir, []string{"TINYGO=" + tg, "GOPROXY=off"}, aiisdk, "build")
+			out := runIn(t, exDir, []string{"AII_OS_BIN=" + binDir, "GOPROXY=off"}, aiisdk, "test", "-skip-build")
+			for _, want := range []string{"PASS  case remember is denied without a grant, and says so by the host's code", "PASS  case recall is denied without a grant", "PASS  case interactions is denied by a stand-in that serves no history", "PASS  case overreach is denied, and returns the denial", "PASS  case spin is denied before it spins", "PASS  case a remember with no text is refused before any host call", "RESULT: PASS"} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("examples/compat: aiisdk test must report %q:\n%s", want, out)
+				}
 			}
-		}
+		})
+	})
+	if !examples {
+		t.FailNow()
 	}
 
 	// ---- 9. THE T1 SIGNING PATH: devcert + sign -> VERIFIED T1. ----

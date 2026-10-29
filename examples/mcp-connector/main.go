@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	sdk "github.com/aiii-dot-id/aii-plugin-sdk/pkg/aiiosdk"
 )
@@ -114,20 +115,86 @@ func forward(name string, c sdk.Call) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var args any = json.RawMessage(c.Arguments)
-	if len(c.Arguments) == 0 {
-		args = map[string]any{}
-	}
 	tool := name
 	if len(tool) > 4 && tool[:4] == "mcp." {
 		tool = tool[4:]
 	}
-	opts.Body = rpc("tools/call", map[string]any{"name": tool, "arguments": args})
+	opts.Body = rpc("tools/call", map[string]any{"name": tool, "arguments": callerArguments(c.Arguments)})
 	res, err := sdk.HTTP.Post(url, opts)
 	if err != nil {
 		return failure(err)
 	}
 	return map[string]any{"http_status": res.Status, "result": res.Body, "effect": res.Effect}, nil
+}
+
+func callerArguments(raw []byte) json.RawMessage {
+	out := []byte{'{'}
+	i := skipSpace(raw, 0)
+	if i < len(raw) && raw[i] == '{' {
+		i++
+	}
+	for {
+		i = skipSpace(raw, i)
+		if i >= len(raw) || raw[i] != '"' {
+			return append(out, '}')
+		}
+		name := raw[i:valueEnd(raw, i)]
+		i = skipSpace(raw, i+len(name))
+		if i < len(raw) && raw[i] == ':' {
+			i = skipSpace(raw, i+1)
+		}
+		value := raw[i:valueEnd(raw, i)]
+		i = skipSpace(raw, i+len(value))
+		if i < len(raw) && raw[i] == ',' {
+			i++
+		}
+
+		decoded, _ := sdk.Object(`{"name":` + string(name) + `}`).String("name")
+		if strings.HasPrefix(decoded, "_host") {
+			continue
+		}
+		if len(out) > 1 {
+			out = append(out, ',')
+		}
+		out = append(append(append(out, name...), ':'), value...)
+	}
+}
+
+func valueEnd(raw []byte, i int) int {
+	depth, inString := 0, false
+	for ; i < len(raw); i++ {
+		switch c := raw[i]; {
+		case inString:
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				if inString = false; depth == 0 {
+					return i + 1
+				}
+			}
+		case c == '"':
+			inString = true
+		case c == '{' || c == '[':
+			depth++
+		case c == '}' || c == ']':
+			if depth == 0 {
+				return i
+			}
+			if depth--; depth == 0 {
+				return i + 1
+			}
+		case depth == 0 && (c == ',' || c == ' ' || c == '\t' || c == '\n' || c == '\r'):
+			return i
+		}
+	}
+	return len(raw)
+}
+
+func skipSpace(raw []byte, i int) int {
+	for i < len(raw) && (raw[i] == ' ' || raw[i] == '\t' || raw[i] == '\n' || raw[i] == '\r') {
+		i++
+	}
+	return i
 }
 
 func failure(err error) (any, error) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ func runNative(dir string, cfg *aiiospkg.AuthorConfig, rep *report, h *harness, 
 		env = append(env, "AII_RUNTIME_ROOT="+runtimeRoot)
 	}
 	carrier := filepath.Join(dir, filepath.FromSlash(variant.Artifact))
+	awaited := cfg.PluginFamily == "voice_interface" || variant.Accelerator != nil
 
 	var banner string
 	var invoke invoker
@@ -59,7 +61,13 @@ func runNative(dir string, cfg *aiiospkg.AuthorConfig, rep *report, h *harness, 
 		}
 		session = newSessionDriver(sw).run
 	} else {
-		w, err := workerdrive.StartNative(carrier, env, timeout, h.answer)
+		var w *workerdrive.Worker
+		var err error
+		if awaited {
+			w, err = workerdrive.StartNative(carrier, env, timeout, h.answer)
+		} else {
+			w, err = workerdrive.StartNativeUnprofiled(carrier, env, h.answer)
+		}
 		if err != nil {
 			rep.fail("readiness", err.Error())
 			return
@@ -69,9 +77,15 @@ func runNative(dir string, cfg *aiiospkg.AuthorConfig, rep *report, h *harness, 
 			return w.Invoke(fmt.Sprintf(`"check-%d"`, n), operation, args, timeout)
 		}
 	}
-	if !strings.Contains(banner, " sdk=") {
-		rep.fail("readiness", "the ready line names no kit (sdk=): "+banner)
-	} else {
+	switch {
+	case !awaited:
+		rep.pass("readiness", "started; variant "+variant.VariantID+" declares no accelerator profile, so a host waits for no ready line and none was awaited")
+	case readyRefusal(banner, variant.Accelerator != nil) != "":
+
+		rep.fail("readiness", readyRefusal(banner, variant.Accelerator != nil))
+		_ = closeIt(timeout)
+		return
+	default:
 		rep.pass("readiness", strings.TrimSpace(banner))
 	}
 	if cfg.ValidationFile == "" {
@@ -84,4 +98,40 @@ func runNative(dir string, cfg *aiiospkg.AuthorConfig, rep *report, h *harness, 
 	} else {
 		rep.pass("exit", "clean stdin-EOF exit 0")
 	}
+}
+
+var profileReadyFields = []string{"models_loaded", "accelerator", "probe_ms"}
+
+func readyRefusal(banner string, profiled bool) string {
+	if !profiled {
+		return ""
+	}
+	models, probe, accelerator := 0, -1, ""
+	for _, f := range strings.Fields(banner) {
+		k, v, ok := strings.Cut(f, "=")
+		if !ok {
+			continue
+		}
+		switch k {
+		case "models_loaded":
+			models, _ = strconv.Atoi(v)
+		case "accelerator":
+			accelerator = v
+		case "probe_ms":
+			if n, err := strconv.Atoi(v); err == nil {
+				probe = n
+			}
+		}
+	}
+	have := map[string]bool{"models_loaded": models > 0, "accelerator": accelerator != "", "probe_ms": probe >= 0}
+	var missing []string
+	for _, k := range profileReadyFields {
+		if !have[k] {
+			missing = append(missing, k+"=")
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return "the ready line of a variant that declares an accelerator profile lacks valid " + strings.Join(missing, ", ") + " (positive models_loaded, nonempty accelerator, nonnegative probe_ms), which a host requires of it: " + strings.TrimSpace(banner)
 }

@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,7 +22,8 @@ type Worker struct {
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
 	stdout  io.Reader
-	stderr  *bytes.Buffer
+	stderr  *lockedBuffer
+	scanned <-chan struct{}
 	banner  string
 	handler Handler
 }
@@ -35,18 +38,24 @@ func StartForward(workerBin string, prefix []string, module string, timeout time
 }
 
 func launch(workerBin string, args []string, timeout time.Duration, handler Handler) (*Worker, error) {
-	return start(exec.Command(workerBin, args...), timeout, handler)
+	return start(exec.Command(workerBin, args...), true, timeout, handler)
 }
 
 func StartNative(binary string, env []string, timeout time.Duration, handler Handler) (*Worker, error) {
 	cmd := exec.Command(binary)
 	cmd.Env = append([]string{}, env...)
-	return start(cmd, timeout, handler)
+	return start(cmd, true, timeout, handler)
+}
+
+func StartNativeUnprofiled(binary string, env []string, handler Handler) (*Worker, error) {
+	cmd := exec.Command(binary)
+	cmd.Env = append([]string{}, env...)
+	return start(cmd, false, 0, handler)
 }
 
 var ErrNoAnswer = errors.New("no answer within the call's deadline")
 
-func start(cmd *exec.Cmd, timeout time.Duration, handler Handler) (*Worker, error) {
+func start(cmd *exec.Cmd, awaitReady bool, timeout time.Duration, handler Handler) (*Worker, error) {
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
@@ -62,10 +71,11 @@ func start(cmd *exec.Cmd, timeout time.Duration, handler Handler) (*Worker, erro
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", cmd.Path, err)
 	}
-	w := &Worker{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &bytes.Buffer{}, handler: handler}
+	w := &Worker{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &lockedBuffer{}, handler: handler}
 
 	bannerCh := make(chan string, 1)
 	ended := make(chan struct{})
+	w.scanned = ended
 	go func() {
 		defer close(ended)
 		sc := bufio.NewScanner(stderrPipe)
@@ -81,6 +91,9 @@ func start(cmd *exec.Cmd, timeout time.Duration, handler Handler) (*Worker, erro
 			}
 		}
 	}()
+	if !awaitReady {
+		return w, nil
+	}
 
 	select {
 	case w.banner = <-bannerCh:
@@ -94,8 +107,9 @@ func start(cmd *exec.Cmd, timeout time.Duration, handler Handler) (*Worker, erro
 		return nil, exitedBeforeReady(cmd, w.stderr.String())
 	case <-time.After(timeout):
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
-		return nil, fmt.Errorf("no ready banner within %s; worker stderr:\n%s", timeout, w.stderr.String())
+		stderr := stderrAtEnd(w.stderr, ended, timeout)
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("no ready banner within %s; worker stderr:\n%s", timeout, stderr)
 	}
 }
 
@@ -145,7 +159,7 @@ func (w *Worker) Invoke(idRaw, operation string, argsJSON json.RawMessage, timeo
 	req.WriteString(`}}`)
 
 	if err := sdk.WriteFrame(w.stdin, req.Bytes(), sdk.MaxControlFrameBytes); err != nil {
-		return nil, fmt.Errorf("write request frame: %w (worker stderr:\n%s)", err, w.stderr.String())
+		return nil, fmt.Errorf("write request frame: %w (worker stderr:\n%s)", err, stderrAtEnd(w.stderr, w.scanned, timeout))
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -177,7 +191,8 @@ func (w *Worker) readFrame(timeout time.Duration) ([]byte, error) {
 	select {
 	case r := <-ch:
 		if r.err != nil {
-			return nil, fmt.Errorf("read frame: %w (worker stderr:\n%s)", r.err, w.stderr.String())
+
+			return nil, fmt.Errorf("read frame: %w (worker stderr:\n%s)", r.err, stderrAtEnd(w.stderr, w.scanned, timeout))
 		}
 		return r.payload, nil
 	case <-time.After(timeout):
@@ -273,20 +288,49 @@ func decodeReply(payload []byte, wantIDRaw string) (*Reply, error) {
 
 func (w *Worker) Close(timeout time.Duration) error {
 	_ = w.stdin.Close()
-	done := make(chan error, 1)
-	go func() { done <- w.cmd.Wait() }()
-	select {
-	case err := <-done:
+	return closeChild(w.cmd, w.stderr, w.scanned, timeout, "worker")
+}
+
+func closeChild(cmd *exec.Cmd, stderr *lockedBuffer, scanned <-chan struct{}, timeout time.Duration, who string) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	exited := func(err error, out string) error {
 		if err == nil {
 			return nil
 		}
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			return fmt.Errorf("worker exited %d (want 0); stderr:\n%s", ee.ExitCode(), w.stderr.String())
+			return fmt.Errorf("%s exited %d (want 0); stderr:\n%s", who, ee.ExitCode(), out)
 		}
-		return fmt.Errorf("worker wait: %w", err)
-	case <-time.After(timeout):
-		_ = w.cmd.Process.Kill()
-		return fmt.Errorf("worker did not exit on stdin EOF within %s; stderr:\n%s", timeout, w.stderr.String())
+		return fmt.Errorf("%s wait: %w", who, err)
 	}
+	select {
+	case <-scanned:
+	case <-timer.C:
+
+		kerr := cmd.Process.Kill()
+		out := stderrAtEnd(stderr, scanned, timeout)
+		werr := cmd.Wait()
+		if exitedItself(kerr, cmd.ProcessState) {
+			return exited(werr, out)
+		}
+		return fmt.Errorf("%s did not exit on stdin EOF within %s; stderr:\n%s", who, timeout, out)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		return exited(err, stderr.String())
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		<-done
+		return fmt.Errorf("%s did not exit on stdin EOF within %s; stderr:\n%s", who, timeout, stderr.String())
+	}
+}
+
+func exitedItself(killErr error, ps *os.ProcessState) bool {
+	if errors.Is(killErr, os.ErrProcessDone) {
+		return true
+	}
+	return runtime.GOOS != "windows" && ps != nil && ps.Exited()
 }

@@ -20,6 +20,7 @@ type SessionWorker struct {
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser
 	stderr  *lockedBuffer
+	scanned <-chan struct{}
 	banner  string
 	handler Handler
 
@@ -39,6 +40,16 @@ type SessionWorker struct {
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
+}
+
+func stderrAtEnd(buf *lockedBuffer, done <-chan struct{}, bound time.Duration) string {
+	t := time.NewTimer(bound)
+	defer t.Stop()
+	select {
+	case <-done:
+	case <-t.C:
+	}
+	return buf.String()
 }
 
 func (b *lockedBuffer) WriteString(s string) {
@@ -87,6 +98,7 @@ func StartNativeSession(binary string, env []string, timeout time.Duration, hand
 		pending: map[string]chan []byte{}, events: make(chan json.RawMessage, sessionEventBuffer), ended: make(chan struct{})}
 	bannerCh := make(chan string, 1)
 	ended := make(chan struct{})
+	w.scanned = ended
 	go func() {
 		defer close(ended)
 		sc := bufio.NewScanner(stderrPipe)
@@ -113,9 +125,10 @@ func StartNativeSession(binary string, env []string, timeout time.Duration, hand
 		}
 	case <-time.After(timeout):
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		stderr := stderrAtEnd(w.stderr, ended, timeout)
+		_ = cmd.Wait()
 		pair.closeHost()
-		return nil, fmt.Errorf("no ready banner within %s; stderr:\n%s", timeout, w.stderr.String())
+		return nil, fmt.Errorf("no ready banner within %s; stderr:\n%s", timeout, stderr)
 	}
 	go w.read(stdout)
 	return w, nil
@@ -231,7 +244,7 @@ func (w *SessionWorker) call(operation string, args json.RawMessage, timeout tim
 		return reply, idRaw, nil
 	case <-w.ended:
 		forget()
-		return nil, idRaw, fmt.Errorf("the lane ended before %s was answered (stderr:\n%s)", operation, w.Stderr())
+		return nil, idRaw, fmt.Errorf("the lane ended before %s was answered (stderr:\n%s)", operation, stderrAtEnd(w.stderr, w.scanned, timeout))
 	case <-time.After(timeout):
 		forget()
 		return nil, idRaw, fmt.Errorf("%w: %s, within %s", ErrNoAnswer, operation, timeout)
@@ -290,23 +303,8 @@ func (w *SessionWorker) ReadAudio() (sdk.AudioFrame, error) { return sdk.ReadAud
 func (w *SessionWorker) Close(timeout time.Duration) error {
 	_ = w.stdin.Close()
 	_ = w.audioIn.Close()
-	done := make(chan error, 1)
-	go func() { done <- w.cmd.Wait() }()
 	defer w.audioOut.Close()
-	select {
-	case err := <-done:
-		if err == nil {
-			return nil
-		}
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			return fmt.Errorf("the carrier exited %d (want 0); stderr:\n%s", ee.ExitCode(), w.Stderr())
-		}
-		return fmt.Errorf("carrier wait: %w", err)
-	case <-time.After(timeout):
-		_ = w.cmd.Process.Kill()
-		return fmt.Errorf("the carrier did not exit on stdin EOF within %s; stderr:\n%s", timeout, w.Stderr())
-	}
+	return closeChild(w.cmd, w.stderr, w.scanned, timeout, "the carrier")
 }
 
 type audioPair struct {

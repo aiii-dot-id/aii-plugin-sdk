@@ -9,6 +9,10 @@ import (
 
 const logFile = "events.log"
 
+const defaultMaxReadBytes = 4 << 20
+
+const logTooLargeMessage = "the log holds more than the %d bytes log.read is set to read (the max_read_bytes setting); nothing was read and nothing was removed"
+
 func init() {
 	p := sdk.New("com.aiii.examples.logging")
 
@@ -63,20 +67,32 @@ func record(c sdk.Call) (any, error) {
 
 func read(c sdk.Call) (any, error) {
 	keep := int64(200)
+	maxRead := defaultMaxReadBytes
 	if vals, err := sdk.Settings.Load(); err == nil {
 		if n, ok := vals.Int("keep_lines"); ok && n >= 10 && n <= 5000 {
 			keep = n
+		}
+		if n, ok := vals.Int("max_read_bytes"); ok && n >= 64<<10 && n <= 16<<20 {
+			maxRead = int(n)
 		}
 	}
 	if n, ok := c.Args().Int("lines"); ok && n >= 1 && n < keep {
 		keep = n
 	}
-	data, err := sdk.Files.ReadAll(sdk.PrivateRoot, logFile, 4<<20)
+
+	data, err := sdk.Files.ReadAll(sdk.PrivateRoot, logFile, maxRead)
 	if err != nil {
+		if oe, ok := sdk.AsOperationError(err); ok && oe.ReasonCode == "FS_NOT_FOUND" {
+			return map[string]any{"lines": []any{}, "total": 0}, nil
+		}
 		if d, ok := sdk.AsDenied(err); ok {
 			return nil, sdk.Deny(d.ReasonCode, "the host denied "+d.Message)
 		}
-		return map[string]any{"lines": []any{}, "total": 0}, nil
+
+		if len(data) > maxRead {
+			return nil, sdk.Fail("LOG_TOO_LARGE", fmt.Sprintf(logTooLargeMessage, maxRead))
+		}
+		return nil, err
 	}
 	all := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	if len(all) == 1 && all[0] == "" {

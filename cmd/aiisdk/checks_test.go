@@ -124,11 +124,12 @@ func buildCheckChild(t *testing.T) string {
 
 // A NATIVE PLUGIN'S CHECKS RUN AGAINST ITS CARRIER, STARTED AS THE HOST
 // STARTS IT: the carrier this machine's variant names, with exactly the
-// host's environment, its ready line awaited (it names the kit that built
-// it), and then every check of the staged validation.json for its set.
-// Readiness is not a check; a check reads nothing of an identity's (the
-// stand-in refuses the plugin's own storage during one, though the run
-// grants it); the run passes only when every check passes.
+// host's environment, its ready line awaited where its variant declares an
+// accelerator profile, and then every
+// check of the staged validation.json for its set. Readiness is not a
+// check; a check reads nothing of an identity's (the stand-in refuses the
+// plugin's own storage during one, though the run grants it); the run
+// passes only when every check passes.
 func TestANativePluginsChecksRunAgainstItsCarrier(t *testing.T) {
 	child := buildCheckChild(t)
 	platform, arch := hostPlatformArch()
@@ -162,6 +163,8 @@ func TestANativePluginsChecksRunAgainstItsCarrier(t *testing.T) {
 		{"name":"reads nothing of the identity","sets":["*"],"lane":"operation","call":{"operation":"peek"},"expect":{"json":{"path":"/refused","equals":true}},"within_ms":5000},
 		{"name":"is for another set","sets":["elsewhere"],"lane":"operation","call":{"operation":"search"},"expect":{"result_contains":"never"},"within_ms":5000}]}`
 	dir, cfg := stage(t, failing)
+	// The profile is what makes a host wait for this carrier's ready line.
+	cfg.Variants[0].Accelerator = &aiiospkg.AcceleratorProfile{}
 	h, err := newHarness([]string{"kv"}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -176,8 +179,8 @@ func TestANativePluginsChecksRunAgainstItsCarrier(t *testing.T) {
 			checks++
 		}
 	}
-	if e := byName["readiness"]; e.Status != "pass" || !strings.Contains(e.Detail, "event=ready") || !strings.Contains(e.Detail, "sdk=") {
-		t.Fatalf("readiness first, its line naming the kit: %+v", e)
+	if e := byName["readiness"]; e.Status != "pass" || !strings.Contains(e.Detail, "event=ready") {
+		t.Fatalf("readiness first, its line reported: %+v", e)
 	}
 	for name, want := range map[string]string{
 		"check embeds the cue":                "pass",
@@ -203,11 +206,16 @@ func TestANativePluginsChecksRunAgainstItsCarrier(t *testing.T) {
 		t.Fatalf("a run with a failing check exits %d, want %d", code, exitFail)
 	}
 
-	// The same carrier with checks that all pass: exit 0.
+	// The same carrier with checks that all pass: exit 0. Its variant
+	// declares no profile here, so no line is awaited, as on a host, and
+	// the check is answered by a carrier sent work as soon as it started.
 	passing := `{"checks":[{"name":"finds the harbor","sets":["*"],"lane":"operation","call":{"operation":"search"},"expect":{"result_contains":"harbor"},"within_ms":5000}]}`
 	dir, cfg = stage(t, passing)
 	rep = &report{}
 	runNative(dir, cfg, rep, h, &cfg.Variants[0], 20*time.Second, "", "")
+	if e := rep.entries[0]; e.Name != "readiness" || e.Status != "pass" || strings.Contains(e.Detail, "event=ready") {
+		t.Fatalf("a variant with no profile is ready once started, whatever it prints: %+v", e)
+	}
 	if code := finish(rep, nil); code != exitPass {
 		t.Fatalf("a run whose checks all pass exits %d: %+v", code, rep.entries)
 	}
