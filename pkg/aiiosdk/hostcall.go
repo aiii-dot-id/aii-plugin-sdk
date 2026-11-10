@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 type InvokeResult struct {
@@ -16,6 +17,8 @@ type InvokeResult struct {
 	ReasonCode string
 
 	ExternalReceipt json.RawMessage
+
+	ReceiptTime time.Time
 
 	Raw json.RawMessage
 }
@@ -112,6 +115,10 @@ func decodeHostReply(reply []byte) (*InvokeResult, error) {
 	res := &InvokeResult{Raw: cloneBytes(reply), Status: status}
 	res.OperationResult = cloneBytes(memberByKey(members, "operation_result"))
 	res.ExternalReceipt = cloneBytes(memberByKey(members, "external_receipt"))
+	if at, ok := receiptTime(res.ExternalReceipt); ok {
+		res.ReceiptTime = at
+		lastHostTime.Store(at.UnixNano())
+	}
 	if r, ok := decodeJSONString(memberByKey(members, "reason")); ok {
 		res.Reason = r
 	}

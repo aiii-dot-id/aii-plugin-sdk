@@ -16,12 +16,14 @@ func pin(b []byte) {
 	}
 }
 
-func releasePins() {
+func releasePins() { releasePinsFrom(0) }
 
-	for i := range pinned {
+func releasePinsFrom(mark int) {
+
+	for i := mark; i < len(pinned); i++ {
 		pinned[i] = nil
 	}
-	pinned = pinned[:0]
+	pinned = pinned[:mark]
 }
 
 //export cabi_realloc
@@ -125,14 +127,17 @@ func hostInvokeCallRaw(params []byte) ([]byte, error) {
 	if len(params) > 0 {
 		pp = unsafe.Pointer(&params[0])
 	}
+
+	mark := len(pinned)
 	bbbInvokeCall(pp, uint32(len(params)), unsafe.Pointer(&importRetArea[0]))
 	replyPtr := getLE32(importRetArea[0:4])
 	replyLen := getLE32(importRetArea[4:8])
-	if replyLen == 0 {
-		return nil, nil
+	var reply []byte
+	if replyLen != 0 {
+		reply = append([]byte(nil), unsafe.Slice((*byte)(unsafe.Pointer(uintptr(replyPtr))), int(replyLen))...)
 	}
-	reply := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(replyPtr))), int(replyLen))
-	return append([]byte(nil), reply...), nil
+	releasePinsFrom(mark)
+	return reply, nil
 }
 
 func putLE32(b []byte, v uint32) {

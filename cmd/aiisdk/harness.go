@@ -194,6 +194,14 @@ func failed(reason string, operationResult interface{}) json.RawMessage {
 }
 
 func failedSaying(reason, detail string, operationResult interface{}) json.RawMessage {
+	return unperformed("failed", reason, detail, operationResult)
+}
+
+func deniedSaying(reason, detail string) json.RawMessage {
+	return unperformed("denied", reason, detail, nil)
+}
+
+func unperformed(status, reason, detail string, operationResult interface{}) json.RawMessage {
 	or := []byte("null")
 	if operationResult != nil {
 		or, _ = json.Marshal(operationResult)
@@ -204,7 +212,7 @@ func failedSaying(reason, detail string, operationResult interface{}) json.RawMe
 		d, _ := json.Marshal(detail)
 		receipt = strings.TrimSuffix(harnessReceipt, "}") + `,"detail":` + string(d) + `}`
 	}
-	return json.RawMessage(`{"success":false,"ok":false,"status":"failed","reason":` + string(q) + `,"reasonCode":` + string(q) + `,"reason_code":` + string(q) + `,"operation_result":` + string(or) + `,"external_receipt":` + receipt + `}`)
+	return json.RawMessage(`{"success":false,"ok":false,"status":"` + status + `","reason":` + string(q) + `,"reasonCode":` + string(q) + `,"reason_code":` + string(q) + `,"operation_result":` + string(or) + `,"external_receipt":` + receipt + `}`)
 }
 
 func (h *harness) answer(method string, params json.RawMessage) (json.RawMessage, json.RawMessage) {
@@ -715,6 +723,25 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 	}
 	switch op {
 	case "fs.list":
+
+		after := ""
+		if len(arguments) > 0 && string(arguments) != "null" {
+			var args map[string]json.RawMessage
+			if err := json.Unmarshal(arguments, &args); err != nil {
+				return deniedSaying("OPERATION_ARGUMENT_INVALID", "arguments must be an object"), nil
+			}
+			for name, raw := range args {
+				if name != "after" {
+					return deniedSaying("NET_UNKNOWN_ARGUMENT", fmt.Sprintf("argument %q is not supported by fs.list (after)", name)), nil
+				}
+
+				var cursor *string
+				if err := json.Unmarshal(raw, &cursor); err != nil || cursor == nil || len(*cursor) > 512 || strings.ContainsAny(*cursor, "/\x00") {
+					return deniedSaying("OPERATION_ARGUMENT_INVALID", "after must be one entry's name: the last name of the page before"), nil
+				}
+				after = *cursor
+			}
+		}
 		f, err := os.Open(filepath.Join(dir, rel))
 		if err != nil {
 			return failed("FS_NOT_FOUND", nil), nil
@@ -725,6 +752,9 @@ func (h *harness) answerFS(op string, target, arguments json.RawMessage) (json.R
 			return failed("FS_IO_FAILED", nil), nil
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+		if after != "" {
+			entries = entries[sort.Search(len(entries), func(i int) bool { return entries[i].Name() > after }):]
+		}
 		truncated := len(entries) > harnessListMax
 		if truncated {
 			entries = entries[:harnessListMax]

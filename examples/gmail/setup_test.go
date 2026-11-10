@@ -17,9 +17,9 @@ import (
 // patch names the fields it changes. Nothing here has met Google.
 
 const (
-	pushAccount = "aii-gmail-push@aii-mail.iam.gserviceaccount.com"
+	pushAccount = "gmail-push@example-project.iam.gserviceaccount.com"
 	notifyURL   = "https://identity.example.invalid/hooks/com.aiii.examples.gmail/notify"
-	subName     = "projects/aii-mail/subscriptions/gmail-push"
+	subName     = "projects/example-project/subscriptions/gmail-push"
 	gmailPush   = "serviceAccount:gmail-api-push@system.gserviceaccount.com"
 )
 
@@ -170,9 +170,9 @@ func TestSetupMakesTheTopicTheGrantTheSubscriptionAndTheWatch(t *testing.T) {
 		}
 	}
 	wantOps(t, "the Pub/Sub calls, in order", p.ops(),
-		"put projects/aii-mail/topics/gmail",
-		"get projects/aii-mail/topics/gmail:getIamPolicy",
-		"post projects/aii-mail/topics/gmail:setIamPolicy",
+		"put projects/example-project/topics/gmail",
+		"get projects/example-project/topics/gmail:getIamPolicy",
+		"post projects/example-project/topics/gmail:setIamPolicy",
 		"put "+strings.TrimPrefix(subName, "/"))
 	if len(g.watches) != 1 || g.watches[0]["topicName"] != topic {
 		t.Errorf("the watch asks for %v", g.watches)
@@ -207,10 +207,10 @@ func TestSetupAgainChangesNothing(t *testing.T) {
 		}
 	}
 	wantOps(t, "the second run's calls", p.ops()[before:],
-		"put projects/aii-mail/topics/gmail",
-		"get projects/aii-mail/topics/gmail:getIamPolicy",
-		"put projects/aii-mail/subscriptions/gmail-push",
-		"get projects/aii-mail/subscriptions/gmail-push")
+		"put projects/example-project/topics/gmail",
+		"get projects/example-project/topics/gmail:getIamPolicy",
+		"put projects/example-project/subscriptions/gmail-push",
+		"get projects/example-project/subscriptions/gmail-push")
 	if len(g.watches) != 2 {
 		t.Errorf("the watch was asked for %d times, want each run", len(g.watches))
 	}
@@ -277,17 +277,17 @@ func TestASubscriptionAlreadyThereIsBroughtToTheShapeWanted(t *testing.T) {
 
 func TestASubscriptionOnAnotherTopicIsNotMoved(t *testing.T) {
 	g, p, h, proc := setupRig(t)
-	p.topics["projects/aii-mail/topics/other"] = true
-	p.subs[subName] = map[string]any{"name": subName, "topic": "projects/aii-mail/topics/other", "pushConfig": map[string]any{"pushEndpoint": "https://x.example"}}
+	p.topics["projects/example-project/topics/other"] = true
+	p.subs[subName] = map[string]any{"name": subName, "topic": "projects/example-project/topics/other", "pushConfig": map[string]any{"pushEndpoint": "https://x.example"}}
 	got := proc.invoke(h, "gmail.setup", setupArgs())
-	check(t, "another topic", got, "failed", remoteFailed, "exists on another topic (projects/aii-mail/topics/other), which this plugin does not move")
+	check(t, "another topic", got, "failed", remoteFailed, "exists on another topic (projects/example-project/topics/other), which this plugin does not move")
 	if !strings.Contains(got.said(), "already done: the topic "+topic+" was created; Gmail was allowed to publish") {
 		t.Errorf("the failure does not say what was done: %s", got.said())
 	}
 	if len(g.watches) != 0 {
 		t.Error("the watch was started though the subscription was refused")
 	}
-	if p.subs[subName]["topic"] != "projects/aii-mail/topics/other" {
+	if p.subs[subName]["topic"] != "projects/example-project/topics/other" {
 		t.Error("the other topic's subscription was changed")
 	}
 }
@@ -304,7 +304,7 @@ func TestSetupWithoutWhatItNeedsAsksNothingOfGoogle(t *testing.T) {
 	}{
 		{"no google account", func(h *standIn, _ map[string]any) { h.handle = "" }, true, argInvalid, "the google handle is not set"},
 		{"no topic", func(h *standIn, _ map[string]any) { h.topic = "" }, true, argInvalid, "the topic setting is the Pub/Sub topic to create"},
-		{"a topic that is not one", func(h *standIn, _ map[string]any) { h.topic = "projects/aii-mail/topics/a/b" }, true, argInvalid, "projects/<project>/topics/<topic>"},
+		{"a topic that is not one", func(h *standIn, _ map[string]any) { h.topic = "projects/example-project/topics/a/b" }, true, argInvalid, "projects/<project>/topics/<topic>"},
 		{"no push account", func(h *standIn, _ map[string]any) { delete(h.extra, "push_account") }, true, argInvalid, "the push_account setting is the service account"},
 		{"an account that is no service account", func(h *standIn, _ map[string]any) { h.extra["push_account"] = "identity@example.invalid" }, true, argInvalid, "the push_account setting"},
 		{"no public origin", func(_ *standIn, a map[string]any) { delete(a, "_host_webhooks") }, true, remoteFailed, "no public origin"},
@@ -351,7 +351,7 @@ func TestASetupStepThatFailsSaysWhichWhatAndWhy(t *testing.T) {
 		{"a policy that is not readable", 2, replyWith(gave(200, "[]", -1)), remoteFailed, []string{"the topic's policy could not be read"}},
 		{"the policy changed meanwhile", 3, replyWith(gave(409, gerr(409, "aborted", "There were concurrent policy changes."), -1)), remoteFailed, []string{"the topic's policy changed while it was being read", "already done: the topic"}},
 		{"the subscription refused", 4, replyWith(gave(400, gerr(400, "invalidArgument", "Invalid push endpoint."), -1)), remoteFailed, []string{"the push subscription:", "Pub/Sub refused it (400: Invalid push endpoint.)", "Gmail was allowed to publish to the topic"}},
-		{"no permission to act as the account", 4, replyWith(gave(403, gerr(403, "forbidden", "User not authorized to act as service account aii-gmail-push@aii-mail.iam.gserviceaccount.com."), -1)), remoteFailed, []string{"not authorized to act as service account", "Service Account User"}},
+		{"no permission to act as the account", 4, replyWith(gave(403, gerr(403, "forbidden", "User not authorized to act as service account gmail-push@example-project.iam.gserviceaccount.com."), -1)), remoteFailed, []string{"not authorized to act as service account", "Service Account User"}},
 	} {
 		g, p, h, proc := setupRig(t)
 		p.at[tc.at] = tc.step
@@ -455,7 +455,7 @@ func TestTheManifestDeclaresWhatSetupCalls(t *testing.T) {
 
 func TestTopicPartsReadTheOneFormAndNothingThatChangesAnAddress(t *testing.T) {
 	for topic, ok := range map[string]bool{
-		"projects/aii-mail/topics/gmail": true, "projects/example.com:p/topics/g_m~1": true,
+		"projects/example-project/topics/gmail": true, "projects/example.com:p/topics/g_m~1": true,
 		"": false, "projects/p/topics": false, "projects/p/topics/": false, "projects//topics/t": false,
 		"project/p/topics/t": false, "projects/p/subscriptions/t": false, "projects/p/topics/t/x": false,
 		"projects/p/topics/t?": false, "projects/p?/topics/t": false, "projects/p/topics/t#": false, "projects/p/topics/t%": false, "projects/p/topics/t u": false, "projects/p q/topics/t": false, "projects/../topics/t": false, "projects/p/topics/..": false, "projects/p/topics/t\n": false,

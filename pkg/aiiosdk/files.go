@@ -28,7 +28,15 @@ func target(root, path string) map[string]any {
 }
 
 func (FilesClient) List(root, path string) ([]FileEntry, bool, error) {
-	res, err := InvokeCall("fs.list", target(root, path), nil)
+	return Files.ListAfter(root, path, "")
+}
+
+func (FilesClient) ListAfter(root, path, after string) ([]FileEntry, bool, error) {
+	var args any
+	if after != "" {
+		args = map[string]any{"after": after}
+	}
+	res, err := InvokeCall("fs.list", target(root, path), args)
 	if err != nil {
 		return nil, false, err
 	}

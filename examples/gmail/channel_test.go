@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	topic     = "projects/aii-mail/topics/gmail"
+	topic     = "projects/example-project/topics/gmail"
 	verifiedA = "mx.google.com; dkim=pass header.i=@example.com; spf=pass smtp.mailfrom=recipient@example.com; dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=example.com"
 )
 
@@ -39,7 +39,7 @@ func (g *gmail) arrive(hid, id, subject string, extra ...field) *stored {
 func pushArgs(recorded []string) map[string]any {
 	data := b64(`{"emailAddress":"` + me + `","historyId":"101"}`)
 	a := map[string]any{"method": "POST", "path": "notify", "query": "", "headers": map[string]any{},
-		"body": `{"message":{"data":"` + data + `","messageId":"1"},"subscription":"projects/aii-mail/subscriptions/push"}`}
+		"body": `{"message":{"data":"` + data + `","messageId":"1"},"subscription":"projects/example-project/subscriptions/push"}`}
 	if recorded != nil {
 		a["recorded"] = recorded
 	}
@@ -124,7 +124,7 @@ func TestARenewalThatFailsSaysWhy(t *testing.T) {
 		says   string
 	}{
 		{"no topic set", "-", nil, argInvalid, "the topic setting is the Pub/Sub topic"},
-		{"a topic that is not one", "aii-mail/gmail", nil, argInvalid, "projects/<project>/topics/<topic>"},
+		{"a topic that is not one", "example-project/gmail", nil, argInvalid, "projects/<project>/topics/<topic>"},
 		{"the publisher not granted", topic, map[int]step{1: replies(gave(403, gerr(403, "forbidden", "User not authorized to perform this action."), -1))}, remoteFailed, "must grant publish to gmail-api-push@system.gserviceaccount.com"},
 		{"a 400 naming the topic", topic, map[int]step{1: replies(gave(400, gerr(400, "invalidArgument", "Invalid topicName does not match projects/*/topics/*"), -1))}, remoteFailed, "Gmail refused the watch (400: Invalid topicName does not match projects/*/topics/*) — the watch was not renewed, and mail may stop"},
 		{"rate limited", topic, map[int]step{1: replies(gave(429, gerr(429, "rateLimitExceeded", "slow down"), 20))}, remoteFailed, "asks to wait 20 s"},

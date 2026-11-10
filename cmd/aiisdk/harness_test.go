@@ -520,3 +520,149 @@ func TestHarnessLocalNetworkByScope(t *testing.T) {
 		t.Fatalf("another port is denied and the denial names the local grant, got %s / %s", res, errObj)
 	}
 }
+
+// fs.list in the harness pages as the host does: `after` names the last entry of the page before,
+// the pages together are every entry once, and an argument it does not know is refused.
+func TestHarnessListsADirectoryOfAnySizeByPages(t *testing.T) {
+	h, _ := newHarness(nil, nil, nil)
+	h.pluginID = "com.example.pages"
+	call := func(params string) (string, string) {
+		res, deny := h.answer("invoke.call", json.RawMessage(params))
+		return string(res), string(deny)
+	}
+	if _, deny := call(`{"operation":"fs.write","target":{"root":"private","path":"big/seed"},"arguments":{"data":"x"}}`); deny != "" {
+		t.Fatal(deny)
+	}
+	defer h.closeFiles()
+	for i := range 1100 {
+		if err := os.WriteFile(filepath.Join(h.privateDir, "big", fmt.Sprintf("f%05d", i)), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen, after := 0, ""
+	for page := 0; page < 4; page++ {
+		args := ""
+		if after != "" {
+			args = fmt.Sprintf(`,"arguments":{"after":%q}`, after)
+		}
+		res, deny := call(`{"operation":"fs.list","target":{"root":"private","path":"big"}` + args + `}`)
+		if deny != "" {
+			t.Fatal(deny)
+		}
+		var r struct {
+			OperationResult struct {
+				Entries []struct {
+					Name string `json:"name"`
+				} `json:"entries"`
+				Truncated bool `json:"truncated"`
+			} `json:"operation_result"`
+		}
+		if err := json.Unmarshal([]byte(res), &r); err != nil {
+			t.Fatal(err)
+		}
+		es := r.OperationResult.Entries
+		if after != "" && len(es) > 0 && es[0].Name <= after {
+			t.Fatalf("page %d starts at %q, not after %q", page, es[0].Name, after)
+		}
+		seen += len(es)
+		if !r.OperationResult.Truncated {
+			break
+		}
+		after = es[len(es)-1].Name
+	}
+	if seen != 1101 {
+		t.Fatalf("%d of 1101 entries over the pages", seen)
+	}
+	if res, _ := call(`{"operation":"fs.list","target":{"root":"private","path":"big"},"arguments":{"offset":3}}`); !strings.Contains(res, "NET_UNKNOWN_ARGUMENT") {
+		t.Fatalf("an unknown argument is refused by name: %s", res)
+	}
+}
+
+// An fs.list argument the harness will not take is refused as the host's broker refuses it: an
+// execution result whose status is denied, with the host's reason, and never failed. A plugin
+// that tells the two apart must meet the same answer here as on the host (aii-os
+// internal/broker/files.go, fsList). The first cut answered "failed", and its test read only the
+// reason (found by review, SDK-S1, 2026-11-10). An after that is null is one of them: decoded
+// into a string it changed nothing and raised no error, so the first page came back as if it
+// had been asked for (found by review, A12-C1, 2026-11-10).
+func TestHarnessRefusesAListingArgumentAsTheHostDoes(t *testing.T) {
+	h, _ := newHarness(nil, nil, nil)
+	h.pluginID = "com.example.refusals"
+	call := func(params string) (string, string) {
+		res, deny := h.answer("invoke.call", json.RawMessage(params))
+		return string(res), string(deny)
+	}
+	if _, deny := call(`{"operation":"fs.write","target":{"root":"private","path":"d/a"},"arguments":{"data":"x"}}`); deny != "" {
+		t.Fatal(deny)
+	}
+	defer h.closeFiles()
+	type reply struct {
+		Success     bool   `json:"success"`
+		OK          bool   `json:"ok"`
+		Status      string `json:"status"`
+		Reason      string `json:"reason"`
+		ReasonCode  string `json:"reasonCode"`
+		ReasonSnake string `json:"reason_code"`
+		Receipt     struct {
+			HostAuthored *bool  `json:"host_authored"`
+			Detail       string `json:"detail"`
+		} `json:"external_receipt"`
+		Result struct {
+			Entries []struct {
+				Name string `json:"name"`
+			} `json:"entries"`
+		} `json:"operation_result"`
+	}
+	list := func(t *testing.T, path, args string) reply {
+		t.Helper()
+		params := `{"operation":"fs.list","target":{"root":"private","path":"` + path + `"}`
+		if args != "" {
+			params += `,"arguments":` + args
+		}
+		res, deny := call(params + `}`)
+		if deny != "" {
+			t.Fatalf("an execution result was owed, not a capability denial: %s", deny)
+		}
+		var r reply
+		if err := json.Unmarshal([]byte(res), &r); err != nil {
+			t.Fatalf("%v: %s", err, res)
+		}
+		return r
+	}
+	for name, c := range map[string]struct{ args, reason string }{
+		"unknown argument":   {`{"offset":3}`, "NET_UNKNOWN_ARGUMENT"},
+		"after not a string": {`{"after":5}`, "OPERATION_ARGUMENT_INVALID"},
+		"after null":         {`{"after":null}`, "OPERATION_ARGUMENT_INVALID"},
+		"after a path":       {`{"after":"a/b"}`, "OPERATION_ARGUMENT_INVALID"},
+		"after with a NUL":   {`{"after":"a\u0000b"}`, "OPERATION_ARGUMENT_INVALID"},
+		"after too long":     {fmt.Sprintf(`{"after":%q}`, strings.Repeat("n", harnessPathBytes+1)), "OPERATION_ARGUMENT_INVALID"},
+		"arguments a list":   {`["after"]`, "OPERATION_ARGUMENT_INVALID"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := list(t, "d", c.args)
+			if r.Success || r.OK || r.Status != "denied" {
+				t.Fatalf("status %q (success %v, ok %v): the host answers denied", r.Status, r.Success, r.OK)
+			}
+			if r.Reason != c.reason || r.ReasonCode != c.reason || r.ReasonSnake != c.reason {
+				t.Fatalf("reason %q / %q / %q, want %q in all three", r.Reason, r.ReasonCode, r.ReasonSnake, c.reason)
+			}
+			if r.Receipt.HostAuthored == nil || *r.Receipt.HostAuthored || r.Receipt.Detail == "" {
+				t.Fatalf("the refusal keeps the harness's own receipt and says why: %+v", r.Receipt)
+			}
+		})
+	}
+	// What is not an argument refusal keeps its own answer: a directory that is not there is a
+	// read that failed, and a directory that is there still lists. No arguments, null arguments
+	// and an empty after are each the first page, and a name is a continuation after it.
+	if r := list(t, "absent", ""); r.Status != "failed" || r.Reason != "FS_NOT_FOUND" {
+		t.Fatalf("a missing directory: status %q, reason %q", r.Status, r.Reason)
+	}
+	for _, args := range []string{"", "null", `{"after":""}`} {
+		if r := list(t, "d", args); r.Status != "succeeded" || len(r.Result.Entries) != 1 || r.Result.Entries[0].Name != "a" {
+			t.Fatalf("arguments %q are the first page: %+v", args, r)
+		}
+	}
+	if r := list(t, "d", `{"after":"a"}`); r.Status != "succeeded" || len(r.Result.Entries) != 0 {
+		t.Fatalf("after the last name the page is empty: %+v", r)
+	}
+}

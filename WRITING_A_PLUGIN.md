@@ -131,6 +131,13 @@ And one rule the library CANNOT enforce for you:
   `c.HostNowMillis()` and `sdk.OperatorAct(...)`, and let anything
   else beginning with `_host` pass without complaint.
 
+  `_host_now_ms` is the time the invocation started; nothing ticks after it.
+  To know how long a call has run, read `sdk.LastHostTime()`: the host's
+  time on the receipt of your most recent host call (every HTTP, file and
+  storage reply carries one), so it is how a plugin sizes a slow call's
+  `TimeoutMS` to the time its invocation has left, rather than letting
+  the host end the invocation after a request was sent.
+
 `main()` stays a one-liner. Your `Describe` calls are the one source of
 the descriptor surface, and it reaches the package through two doors
 that must agree: the built module exports it (`aiii-plugin-describe`),

@@ -73,8 +73,7 @@ func (s *scanner) value() bool {
 	case c == '[':
 		return s.nested(s.array)
 	case c == '"':
-		_, ok := s.string_()
-		return ok
+		return s.skipString()
 	case c == '-' || (c >= '0' && c <= '9'):
 		return s.number()
 	case c == 't':
@@ -168,12 +167,41 @@ func (s *scanner) array() bool {
 	}
 }
 
+func (s *scanner) skipString() bool {
+	if s.i >= len(s.b) || s.b[s.i] != '"' {
+		return false
+	}
+	s.i++
+	for s.i < len(s.b) {
+		c := s.b[s.i]
+		switch {
+		case c == '"':
+			s.i++
+			return true
+		case c == '\\':
+			if _, ok := s.escape(); !ok {
+				return false
+			}
+		case c < 0x20:
+			return false
+		default:
+			s.i++
+		}
+	}
+	return false
+}
+
 func (s *scanner) string_() (string, bool) {
 	if s.i >= len(s.b) || s.b[s.i] != '"' {
 		return "", false
 	}
+
+	ahead := scanner{b: s.b, i: s.i}
+	if !ahead.skipString() {
+		return "", false
+	}
 	s.i++
-	var out []byte
+	out := make([]byte, 0, ahead.i-s.i)
 	for s.i < len(s.b) {
 		c := s.b[s.i]
 		switch {
